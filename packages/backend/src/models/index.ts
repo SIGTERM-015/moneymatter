@@ -21,6 +21,7 @@ import BudgetPlansModel from './budget-plans.model';
 import CategoriesModel from './categories.model';
 import CategoryTagsModel from './category-tags.model';
 import { connection } from './connection';
+import CreditCardDetailsModel from './credit-card-details.model';
 import CurrenciesModel from './currencies.model';
 import ExchangeRatesModel from './exchange-rates.model';
 import FeatureUsagesModel from './feature-usages.model';
@@ -165,6 +166,7 @@ const models = [
   VentureEventLinksModel,
   VehiclesModel,
   LoanDetailsModel,
+  CreditCardDetailsModel,
   TransactionAutomationsModel,
   TransactionAttachmentsModel,
   ImportBatchesModel,

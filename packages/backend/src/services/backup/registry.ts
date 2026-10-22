@@ -283,6 +283,13 @@ const TABLE_DEFS = [
     restoreMode: 'insert',
   },
   {
+    fileName: 'credit-card-details',
+    model: models.CreditCardDetails,
+    tier: 3,
+    scope: { strategy: 'userColumn', column: 'userId' },
+    restoreMode: 'insert',
+  },
+  {
     fileName: 'transaction-groups',
     model: models.TransactionGroups,
     tier: 3,

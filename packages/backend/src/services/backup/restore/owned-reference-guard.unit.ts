@@ -30,6 +30,7 @@ const EXPECTED_GUARDED_COLUMNS: Record<string, string[]> = {
   'import-batch-account-effects': ['accountId', 'importBatchId'],
   'investment-transactions': ['portfolioId'],
   'loan-details': ['accountId'],
+  'credit-card-details': ['accountId'],
   'payee-aliases': ['payeeId'],
   'payee-tags': ['payeeId', 'tagId'],
   payees: ['defaultCategoryId'],
