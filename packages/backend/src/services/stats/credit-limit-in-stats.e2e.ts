@@ -181,7 +181,9 @@ describe('[Stats] Credit limit in statistics', () => {
 
       expect(rawData.length).toBeGreaterThan(0);
       const rawLastEntry = rawData[rawData.length - 1]!;
-      expect(rawLastEntry.accountsBalance).toBe(5000);
+      // Credit cards live in their own bucket, so the limit adjustment lands there too.
+      expect(rawLastEntry.accountsBalance).toBe(0);
+      expect(rawLastEntry.cardsBalance).toBe(5000);
       expect(rawLastEntry.totalBalance).toBe(5000);
 
       await helpers.updateUserSettings({
@@ -193,7 +195,8 @@ describe('[Stats] Credit limit in statistics', () => {
 
       expect(adjustedData.length).toBeGreaterThan(0);
       for (const entry of adjustedData) {
-        expect(entry.accountsBalance).toBe(2000); // 5000 - 3000
+        expect(entry.accountsBalance).toBe(0);
+        expect(entry.cardsBalance).toBe(2000); // 5000 - 3000
         expect(entry.totalBalance).toBe(2000);
       }
 
@@ -210,7 +213,8 @@ describe('[Stats] Credit limit in statistics', () => {
 
       // Account 1: 5000 - 3000 = 2000, Account 2: 2000 - 1000 = 1000, Total: 3000
       const multiAccountLastEntry = multiAccountData[multiAccountData.length - 1]!;
-      expect(multiAccountLastEntry.accountsBalance).toBe(3000);
+      expect(multiAccountLastEntry.accountsBalance).toBe(0);
+      expect(multiAccountLastEntry.cardsBalance).toBe(3000);
       expect(multiAccountLastEntry.totalBalance).toBe(3000);
     }, 60_000);
 

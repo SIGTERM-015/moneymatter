@@ -10,9 +10,9 @@ export const formatDateKey = (date: Date | string): string => format(date, 'yyyy
 export interface CombinedBalanceHistoryItem {
   date: string;
   /**
-   * Sum of all "real" asset account categories (cash, credit card, savings, etc.).
-   * Vehicles and loans are excluded so the line isn't dragged down by depreciation
-   * or liabilities — those get their own `vehiclesBalance`/`loansBalance` fields.
+   * Sum of all "real" asset account categories (cash, savings, etc.). Vehicles, loans
+   * and credit cards are excluded so the line isn't dragged down by depreciation or
+   * liabilities — those get their own `vehiclesBalance`/`loansBalance`/`cardsBalance` fields.
    */
   accountsBalance: number;
   portfoliosBalance: number;
@@ -21,6 +21,8 @@ export interface CombinedBalanceHistoryItem {
   vehiclesBalance: number;
   /** Sum of loan balances (stored negative), so adding it to totalBalance subtracts liabilities. */
   loansBalance: number;
+  /** Sum of credit-card balances (owed amount stored negative), net of their limits when that setting is on. */
+  cardsBalance: number;
   totalBalance: number;
 }
 

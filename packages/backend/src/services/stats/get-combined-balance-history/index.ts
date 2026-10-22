@@ -21,6 +21,7 @@ import { getCreditLimitAdjustment } from '@services/stats/get-credit-limit-adjus
 import { eachDayOfInterval, endOfDay, format, parseISO, startOfDay, subDays } from 'date-fns';
 import { Op } from 'sequelize';
 
+import { calculateCardsBalanceHistory } from './cards-balance';
 import { resolveOldestEventDate } from './date-range';
 import { buildUserRatesMap, createFindLatestUsdRate, createGetExchangeRate } from './exchange-rate-lookup';
 import { computeHoldingsValueByDate } from './holdings-replay';
@@ -337,7 +338,7 @@ const calculatePortfolioBalanceHistory = async ({
 };
 
 /**
- * Daily balance snapshots (accounts, portfolios, ventures, vehicles, total)
+ * Daily balance snapshots (accounts, cards, portfolios, ventures, vehicles, loans, total)
  * for a user within an inclusive `yyyy-MM-dd` date range. Portfolio values
  * are replayed from transaction history against daily prices. When `from` is
  * omitted the window extends back to the oldest recorded event
@@ -377,6 +378,7 @@ export const getCombinedBalanceHistory = async ({
       portfolioValuesByDate,
       ventureValuesByDate,
       creditLimitSum,
+      cardsHistory,
     ] = await withTransaction(async () => {
       // Shared by every sub-calculator that converts to base currency — fetch once.
       const userBaseCurrencyPromise = UsersCurrencies.findOne({
@@ -394,7 +396,9 @@ export const getCombinedBalanceHistory = async ({
           accountScope: 'owned',
           from: minDate,
           to: maxDate,
-          categoryFilter: { exclude: [ACCOUNT_CATEGORIES.vehicle, ACCOUNT_CATEGORIES.loan] },
+          categoryFilter: {
+            exclude: [ACCOUNT_CATEGORIES.vehicle, ACCOUNT_CATEGORIES.loan, ACCOUNT_CATEGORIES.creditCard],
+          },
         }),
         (async () => {
           // Back-fill each loan's pre-anchor days from its opening balance
@@ -422,6 +426,7 @@ export const getCombinedBalanceHistory = async ({
         calculatePortfolioBalanceHistory({ userId, minDate, maxDate, uniqueDates, userBaseCurrencyPromise }),
         calculateVentureBalanceHistory({ userId, minDate, maxDate, uniqueDates, userBaseCurrencyPromise }),
         includeCreditLimit ? getCreditLimitAdjustment({ userId, accountScope: 'owned' }) : Promise.resolve(0),
+        calculateCardsBalanceHistory({ userId, from: minDate, to: maxDate, includeCreditLimit }),
       ]);
     })();
 
@@ -430,7 +435,8 @@ export const getCombinedBalanceHistory = async ({
       (!loansBalanceHistory || loansBalanceHistory.length === 0) &&
       (!vehicleValuesByDate || vehicleValuesByDate.size === 0) &&
       (!portfolioValuesByDate || portfolioValuesByDate.size === 0) &&
-      (!ventureValuesByDate || ventureValuesByDate.size === 0)
+      (!ventureValuesByDate || ventureValuesByDate.size === 0) &&
+      cardsHistory.cardsBalanceByDate.size === 0
     ) {
       return [];
     }
@@ -447,7 +453,10 @@ export const getCombinedBalanceHistory = async ({
     }
 
     const combinedHistory: CombinedBalanceHistoryItem[] = uniqueDates.map((dateStr) => {
-      const accountsBalance = (accountsBalanceByDate.get(dateStr) ?? 0) - creditLimitSum;
+      // The credit-limit adjustment follows each account into its own bucket.
+      const accountsBalance =
+        (accountsBalanceByDate.get(dateStr) ?? 0) - (creditLimitSum - cardsHistory.cardsCreditLimitCents);
+      const cardsBalance = (cardsHistory.cardsBalanceByDate.get(dateStr) ?? 0) - cardsHistory.cardsCreditLimitCents;
       const vehiclesBalance = vehicleValuesByDate?.get(dateStr) ?? 0;
       const portfoliosBalance = portfolioValuesByDate?.get(dateStr) ?? 0;
       const venturesBalance = ventureValuesByDate?.get(dateStr) ?? 0;
@@ -460,7 +469,9 @@ export const getCombinedBalanceHistory = async ({
         venturesBalance,
         vehiclesBalance,
         loansBalance,
-        totalBalance: accountsBalance + portfoliosBalance + venturesBalance + vehiclesBalance + loansBalance,
+        cardsBalance,
+        totalBalance:
+          accountsBalance + portfoliosBalance + venturesBalance + vehiclesBalance + loansBalance + cardsBalance,
       };
     });
 
