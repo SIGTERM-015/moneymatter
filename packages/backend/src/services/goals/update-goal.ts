@@ -11,7 +11,7 @@ import { writeGoalShares } from './share-capacity';
 
 type UpdateGoalParams = UpdateGoalPayload & { userId: number; goalId: RecordId };
 
-/** Pause, archive and unarchive are status changes here. Archiving releases the shares; unarchiving re-checks them. */
+/** Pause, archive and unarchive are status changes here. Archiving releases the shares; unarchiving re-checks and re-places them. */
 const updateGoalImpl = withTransaction(
   async ({
     userId,
@@ -38,12 +38,22 @@ const updateGoalImpl = withTransaction(
     const nextStatus = status ?? goal.status;
     const unarchiving =
       !GOAL_STATUSES_HOLDING_SHARES.includes(goal.status) && GOAL_STATUSES_HOLDING_SHARES.includes(nextStatus);
-    if (accounts !== undefined || unarchiving) {
-      await writeGoalShares({ userId, goalId, status: nextStatus, shares: accounts });
-    }
 
     const completionChanged =
       currencyChanged || (targetAmount !== undefined && !Money.fromDecimal(targetAmount).equals(goal.targetAmount));
+
+    if (accounts !== undefined || unarchiving || completionChanged) {
+      await writeGoalShares({
+        userId,
+        goalId,
+        status: nextStatus,
+        target: {
+          amount: targetAmount === undefined ? goal.targetAmount : Money.fromDecimal(targetAmount),
+          currencyCode: currencyCode ?? goal.currencyCode,
+        },
+        shares: accounts,
+      });
+    }
 
     const logoPatch = await applyLogoWrite({
       write: { logoDomain, logoInitials, logoColor, logoIcon, logoImage },

@@ -19,6 +19,7 @@ const createGoalImpl = withTransaction(
     targetDate = null,
     plannedMonthly = null,
     sortOrder,
+    reachedHoldDays,
     accounts,
     logoDomain,
     logoInitials,
@@ -38,10 +39,17 @@ const createGoalImpl = withTransaction(
       targetDate,
       plannedMonthly: plannedMonthly === null ? null : Money.fromDecimal(plannedMonthly),
       ...(sortOrder !== undefined && { sortOrder }),
+      ...(reachedHoldDays !== undefined && { reachedHoldDays }),
       ...logoPatch,
     });
 
-    await writeGoalShares({ userId, goalId: goal.id, status: goal.status, shares: accounts });
+    await writeGoalShares({
+      userId,
+      goalId: goal.id,
+      status: goal.status,
+      target: { amount: goal.targetAmount, currencyCode },
+      shares: accounts,
+    });
 
     return goal.id;
   },

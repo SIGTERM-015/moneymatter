@@ -23,7 +23,13 @@ import { useCreateGoal, useGoals, useUpdateGoal } from '@/composable/data-querie
 import { useDateLocale } from '@/composable/use-date-locale';
 import { cn } from '@/lib/utils';
 import { useAccountsStore, useCurrenciesStore } from '@/stores';
-import { API_ERROR_CODES, type CurrencyModel, GOAL_NAME_MAX_LENGTH, type GoalModel } from '@bt/shared/types';
+import {
+  API_ERROR_CODES,
+  type CurrencyModel,
+  GOAL_NAME_MAX_LENGTH,
+  GOAL_REACHED_HOLD_DAYS_MAX,
+  type GoalModel,
+} from '@bt/shared/types';
 import { PencilIcon, PlusIcon } from '@lucide/vue';
 import { startOfTomorrow } from 'date-fns';
 import { storeToRefs } from 'pinia';
@@ -39,13 +45,19 @@ import {
   getGoalFormServerError,
   getGoalFormSummary,
   goalFormStateFrom,
+  parseNumberOrNull,
   sumCountedAmount,
   validateGoalForm,
 } from '../form-helpers';
+import { formatGoalLinkLabel, getAccountFixedHolders } from '../helpers';
 import GoalAccountsDialog from './goal-accounts-dialog.vue';
 import GoalLogo from './goal-logo.vue';
 
-const SILENT_ERROR_CODES = [API_ERROR_CODES.goalShareCapacityExceeded, API_ERROR_CODES.goalCurrencyRateUnavailable];
+const SILENT_ERROR_CODES = [
+  API_ERROR_CODES.goalShareCapacityExceeded,
+  API_ERROR_CODES.goalCurrencyRateUnavailable,
+  API_ERROR_CODES.goalFixedAmountsBelowTarget,
+];
 const EMPTY_LOGO_FIELDS = pickLogoFields({});
 
 const props = defineProps<{ goal?: GoalModel; initialValues?: GoalWhatIfApplyValues | null }>();
@@ -57,12 +69,13 @@ const { formatAmountByCurrencyCode, formatBaseCurrency } = useFormatCurrency();
 const { formatCurrencyLabel } = useCurrencyName();
 const { accountsRecord } = storeToRefs(useAccountsStore());
 const { baseCurrency, systemCurrenciesVerbose } = storeToRefs(useCurrenciesStore());
-const { refetch: refetchGoals } = useGoals();
+const { data: goals, refetch: refetchGoals } = useGoals();
 const createMutation = useCreateGoal({ silentErrorCodes: SILENT_ERROR_CODES });
 const updateMutation = useUpdateGoal({ silentErrorCodes: SILENT_ERROR_CODES });
 
 const formId = useId();
 const plannedMonthlyId = useId();
+const holdDaysId = useId();
 const baseCurrencyCode = computed(() => baseCurrency.value?.currencyCode ?? '');
 
 const state = ref<GoalFormState>(goalFormStateFrom({ baseCurrencyCode: baseCurrencyCode.value }));
@@ -91,7 +104,13 @@ watch(
 
 const isPending = computed(() => createMutation.isPending.value || updateMutation.isPending.value);
 
-const errors = computed(() => validateGoalForm({ state: state.value, storedTargetDate: props.goal?.targetDate }));
+const errors = computed(() =>
+  validateGoalForm({
+    state: state.value,
+    accountsById: accountsRecord.value,
+    storedTargetDate: props.goal?.targetDate,
+  }),
+);
 const hasErrors = computed(() => Object.values(errors.value).some(Boolean));
 const errorFor = (key: keyof GoalFormErrors) =>
   showErrors.value && errors.value[key] ? t(errors.value[key]!) : undefined;
@@ -105,6 +124,7 @@ const currencyError = computed(() =>
 const accountsError = computed(() => {
   const required = errorFor('accounts');
   if (required) return required;
+  if (serverError.value?.field === 'fixedBelowTarget') return t('goals.form.errors.fixedBelowTarget');
   if (serverError.value?.field !== 'accounts') return undefined;
   const { details } = serverError.value;
   if (!details) return t('goals.form.errors.shareCapacityGeneric');
@@ -124,9 +144,23 @@ const selectedShares = computed(() =>
 );
 const missingAccountsCount = computed(() => selectedShares.value.filter((share) => !share.account).length);
 
-const countedBase = computed(() =>
-  sumCountedAmount({ shares: state.value.accounts, accountsById: accountsRecord.value }),
-);
+const countedBase = computed(() => {
+  const otherGoals = goals.value;
+  if (!otherGoals) return null;
+  return sumCountedAmount({
+    shares: state.value.accounts,
+    accountsById: accountsRecord.value,
+    holdersOf: ({ accountId }) =>
+      getAccountFixedHolders({ goals: otherGoals, accountId, editingGoalId: props.goal?.id }),
+  });
+});
+
+const shareLabel = ({ share }: { share: GoalFormState['accounts'][number] }) =>
+  formatGoalLinkLabel({
+    share,
+    currencyCode: accountsRecord.value[share.accountId]?.currencyCode,
+    formatAmount: ({ amount, currencyCode }) => formatAmountByCurrencyCode(amount, currencyCode),
+  });
 
 const rateToBase = computed(() => {
   if (state.value.currencyCode === baseCurrencyCode.value) return 1;
@@ -137,7 +171,7 @@ const rateToBase = computed(() => {
 const summaryText = computed(() => {
   const summary = getGoalFormSummary({
     state: state.value,
-    counted: rateToBase.value === null ? null : countedBase.value / rateToBase.value,
+    counted: rateToBase.value === null || countedBase.value === null ? null : countedBase.value / rateToBase.value,
   });
   if (!summary) return null;
 
@@ -161,8 +195,17 @@ const summaryText = computed(() => {
 
 const onAccountsChange = (shares: GoalFormState['accounts']) => {
   state.value.accounts = shares;
-  if (serverError.value?.field === 'accounts') serverError.value = null;
+  if (serverError.value?.field === 'accounts' || serverError.value?.field === 'fixedBelowTarget') {
+    serverError.value = null;
+  }
 };
+
+watch(
+  () => [state.value.targetAmount, state.value.currencyCode],
+  () => {
+    if (serverError.value?.field === 'fixedBelowTarget') serverError.value = null;
+  },
+);
 
 const submit = async () => {
   showErrors.value = true;
@@ -277,7 +320,7 @@ const submit = async () => {
               <AccountLogo v-if="share.account" :account="share.account" class="size-5 shrink-0 rounded-full" />
               <span v-if="share.account" class="truncate">{{ share.account.name }}</span>
               <span v-else class="text-warning-text truncate">{{ $t('goals.form.unavailableAccount') }}</span>
-              <span class="text-muted-foreground tabular-nums">{{ share.sharePercent }}%</span>
+              <span class="text-muted-foreground tabular-nums">{{ shareLabel({ share }) }}</span>
             </span>
           </div>
           <p v-else class="text-muted-foreground text-sm">{{ $t('goals.form.noAccounts') }}</p>
@@ -290,7 +333,9 @@ const submit = async () => {
               class="text-muted-foreground text-sm"
             >
               <template #amount>
-                <span class="text-foreground font-medium tabular-nums">{{ formatBaseCurrency(countedBase) }}</span>
+                <span class="text-foreground font-medium tabular-nums">
+                  {{ countedBase === null ? '—' : formatBaseCurrency(countedBase) }}
+                </span>
               </template>
             </i18n-t>
             <span v-if="missingAccountsCount" class="text-warning-text text-sm">
@@ -336,6 +381,31 @@ const submit = async () => {
           :error-message="errorFor('plannedMonthly')"
           :disabled="isPending"
         />
+      </div>
+
+      <div class="grid gap-1.5">
+        <div class="flex items-center justify-between gap-3">
+          <Label :for="holdDaysId">{{ $t('goals.form.holdDaysLabel') }}</Label>
+          <div class="w-28 shrink-0">
+            <InputField
+              :id="holdDaysId"
+              :model-value="state.reachedHoldDays"
+              type="number"
+              only-positive
+              :max="GOAL_REACHED_HOLD_DAYS_MAX"
+              :placeholder="$t('goals.form.holdDaysPlaceholder')"
+              :disabled="isPending"
+              trailing-icon-css-class="px-3"
+              @update:model-value="(value) => (state.reachedHoldDays = parseNumberOrNull(value))"
+            >
+              <template #iconTrailing>
+                <span class="text-muted-foreground text-sm">{{ $t('goals.form.holdDaysUnit') }}</span>
+              </template>
+            </InputField>
+          </div>
+        </div>
+        <FieldError :error-message="errorFor('reachedHoldDays')" />
+        <p class="text-muted-foreground text-xs">{{ $t('goals.form.holdDaysHint') }}</p>
       </div>
 
       <p v-if="summaryText" class="border-border bg-muted/40 rounded-lg border p-3 text-sm">{{ summaryText }}</p>

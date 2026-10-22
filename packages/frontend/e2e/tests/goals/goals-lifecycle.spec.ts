@@ -479,13 +479,14 @@ test.describe('Goals lifecycle', () => {
       await expect(row).toContainText('no date');
     });
 
-    await test.step('a fully used account is disabled and names its goals (docs create-and-edit)', async () => {
+    await test.step('a fully used account offers a fixed amount only and names its goals (docs create-and-edit)', async () => {
       const { form, dialog } = await openNewGoalAccounts({
         page,
         goalName: 'Probe',
       });
       const savings = accountCheckbox({ dialog, name: SAVINGS.name });
-      await expect(savings).toBeDisabled();
+      await expect(savings).toBeEnabled();
+      await expect(savings).toHaveAccessibleName(/Fully used: .* · fixed amount only/);
       await expect(savings).toHaveAccessibleName(
         new RegExp(`${HOLIDAY.name}.*${EMERGENCY.name}|${EMERGENCY.name}.*${HOLIDAY.name}`),
       );
@@ -642,7 +643,7 @@ test.describe('Goals lifecycle', () => {
         page,
         goalName: 'Probe',
       });
-      await expect(accountCheckbox({ dialog, name: SAVINGS.name })).toBeDisabled();
+      await expect(accountCheckbox({ dialog, name: SAVINGS.name })).toHaveAccessibleName(/fixed amount only/);
       await closeNewGoalAccounts({ page, form, dialog });
       expect(
         await postGoalStatus({

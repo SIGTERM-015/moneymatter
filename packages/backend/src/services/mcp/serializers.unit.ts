@@ -292,8 +292,9 @@ describe('MCP serializers', () => {
       achievedAt: null,
       achievedAmount: null,
       sortOrder: 0,
+      reachedHoldDays: 30,
       logoDomain: null,
-      accounts: [{ accountId, sharePercent: 50 }],
+      accounts: [{ accountId, sharePercent: 50, fixedAmount: null, fixedPosition: null }],
       insights,
       createdAt: '2026-10-01T00:00:00.000Z',
       updatedAt: '2026-10-01T00:00:00.000Z',
@@ -312,6 +313,7 @@ describe('MCP serializers', () => {
         plannedMonthly: null,
         achievedAt: null,
         achievedAmount: null,
+        reachedHoldDays: 30,
         progress: {
           status: 'behind',
           currentValue: 1000,
@@ -322,7 +324,7 @@ describe('MCP serializers', () => {
           etaMonths: 20,
           daysLeft: 240,
         },
-        accounts: [{ accountId, accountName: 'Savings', sharePercent: 50 }],
+        accounts: [{ accountId, accountName: 'Savings', sharePercent: 50, fixedAmount: null, fixedPosition: null }],
       });
     });
 
@@ -340,7 +342,9 @@ describe('MCP serializers', () => {
       const [slim] = slimGoalsForMcp({ goals: [{ ...goal, insights: noPace }], accountNames: new Map() });
 
       expect(slim!.progress).toMatchObject({ pace: null, historicalPace: null, etaMonths: null, neededMonthly: null });
-      expect(slim!.accounts).toEqual([{ accountId, accountName: null, sharePercent: 50 }]);
+      expect(slim!.accounts).toEqual([
+        { accountId, accountName: null, sharePercent: 50, fixedAmount: null, fixedPosition: null },
+      ]);
     });
 
     it.each([

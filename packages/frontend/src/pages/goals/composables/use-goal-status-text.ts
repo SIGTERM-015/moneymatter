@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n';
 import { getGoalStatusLabel } from '../helpers';
 
 type StatusSource =
-  | { goal: Pick<GoalModel, 'status' | 'achievedAt' | 'insights'> }
+  | { goal: Pick<GoalModel, 'status' | 'achievedAt' | 'reachedHoldDays' | 'insights'> }
   | { progress: Pick<GoalProgress, 'status' | 'etaMonths' | 'daysLeft'>; today: string };
 
 export const useGoalStatusText = () => {

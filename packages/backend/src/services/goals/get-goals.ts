@@ -8,7 +8,7 @@ import Goals from '@models/goals.model';
 import { serializeLogoFields } from '@root/serializers/logo-fields.serializer';
 import { withTransaction } from '@services/common/with-transaction';
 
-import { loadGoalInsights } from './goal-insights';
+import { loadGoalInsights, loadHeldFixedAmounts } from './goal-insights';
 
 interface QueryGoalsParams {
   userId: number;
@@ -27,7 +27,13 @@ const queryGoals = ({ userId, goalIds, lock = false }: QueryGoalsParams): Promis
 
   return Goals.findAll({
     where,
-    include: [{ model: GoalAccounts, as: 'goalAccounts', attributes: ['accountId', 'sharePercent'] }],
+    include: [
+      {
+        model: GoalAccounts,
+        as: 'goalAccounts',
+        attributes: ['accountId', 'sharePercent', 'fixedAmount'],
+      },
+    ],
     order: [
       ['sortOrder', 'ASC'],
       ['createdAt', 'ASC'],
@@ -45,7 +51,33 @@ export const findGoal = async ({ userId, goalId, lock }: { userId: number; goalI
   return goal ?? throwGoalNotFound();
 };
 
-const toGoalResponse = ({ goal, insights }: { goal: Goals; insights: GoalInsights | null }): GoalModel => ({
+/**
+ * The goal's place among the account's held fixed amounts, dense so a write can echo it back. A goal
+ * holding none there (archived) is last, where unarchiving places it.
+ */
+const fixedRank = ({
+  heldFixedAmounts,
+  goalId,
+  accountId,
+}: {
+  heldFixedAmounts: GoalAccounts[];
+  goalId: RecordId;
+  accountId: RecordId;
+}): number => {
+  const held = heldFixedAmounts.filter((row) => row.accountId === accountId);
+  const rank = held.findIndex((row) => row.goalId === goalId);
+  return rank === -1 ? held.length : rank;
+};
+
+const toGoalResponse = ({
+  goal,
+  insights,
+  heldFixedAmounts,
+}: {
+  goal: Goals;
+  insights: GoalInsights | null;
+  heldFixedAmounts: GoalAccounts[];
+}): GoalModel => ({
   id: goal.id,
   name: goal.name,
   currencyCode: goal.currencyCode,
@@ -56,8 +88,14 @@ const toGoalResponse = ({ goal, insights }: { goal: Goals; insights: GoalInsight
   achievedAt: goal.achievedAt ? goal.achievedAt.toISOString() : null,
   achievedAmount: centsToApiDecimalOrNull(goal.achievedAmount),
   sortOrder: goal.sortOrder,
+  reachedHoldDays: goal.reachedHoldDays,
   ...serializeLogoFields({ entity: goal }),
-  accounts: (goal.goalAccounts ?? []).map(({ accountId, sharePercent }) => ({ accountId, sharePercent })),
+  accounts: (goal.goalAccounts ?? []).map(({ accountId, sharePercent, fixedAmount }) => ({
+    accountId,
+    sharePercent,
+    fixedAmount: centsToApiDecimalOrNull(fixedAmount),
+    fixedPosition: fixedAmount === null ? null : fixedRank({ heldFixedAmounts, goalId: goal.id, accountId }),
+  })),
   insights,
   createdAt: goal.createdAt.toISOString(),
   updatedAt: goal.updatedAt.toISOString(),
@@ -67,8 +105,14 @@ const toGoalResponse = ({ goal, insights }: { goal: Goals; insights: GoalInsight
 export const loadGoalsWithInsights = withTransaction(
   async ({ userId, goalIds }: { userId: number; goalIds?: RecordId[] }): Promise<GoalModel[]> => {
     const goals = await queryGoals({ userId, goalIds });
-    const insightsByGoal = await loadGoalInsights({ userId, goals });
-    return goals.map((goal) => toGoalResponse({ goal, insights: insightsByGoal.get(goal.id) ?? null }));
+    const heldFixedAmounts = await loadHeldFixedAmounts({
+      userId,
+      accountIds: [...new Set(goals.flatMap((goal) => (goal.goalAccounts ?? []).map((link) => link.accountId)))],
+    });
+    const insightsByGoal = await loadGoalInsights({ userId, goals, heldFixedAmounts });
+    return goals.map((goal) =>
+      toGoalResponse({ goal, insights: insightsByGoal.get(goal.id) ?? null, heldFixedAmounts }),
+    );
   },
 );
 

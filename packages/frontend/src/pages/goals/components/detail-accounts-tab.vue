@@ -10,8 +10,8 @@ import { sumBy } from 'lodash-es';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-import { getAccountShareCapacity } from '../helpers';
-import { type DetailAccountRow, formatRowAmount } from './detail-helpers';
+import { formatGoalLinkLabel, getAccountShareCapacity } from '../helpers';
+import { type DetailAccountRow, formatAccountRowCaption, formatRowAmount } from './detail-helpers';
 import DetailNoAccounts from './detail-no-accounts.vue';
 
 const GRID =
@@ -28,7 +28,17 @@ const formatAmount = ({ amount }: { amount: number }) =>
 const formatConverted = ({ row, amount }: { row: DetailAccountRow; amount: number }) =>
   formatRowAmount({ row, formatted: formatAmount({ amount }), currencyCode: props.goal.currencyCode });
 
-const shareCaption = (row: DetailAccountRow) => {
+const linkLabel = ({ row }: { row: DetailAccountRow }) =>
+  formatGoalLinkLabel({
+    share: row,
+    currencyCode: row.account?.currencyCode,
+    formatAmount: formatWholeOrCompactAmount,
+  });
+
+const amountCaption = ({ row }: { row: DetailAccountRow }) => formatAccountRowCaption({ row, t, formatAmount });
+
+const shareCaption = ({ row }: { row: DetailAccountRow }) => {
+  if (row.fixedAmount !== null) return t('goals.details.accounts.fixedHere', { amount: linkLabel({ row }) });
   if (row.sharePercent === FULL_SHARE) return t('goals.details.accounts.wholeAccount');
   if (!allGoals.value) return t('goals.details.accounts.shareHere', { share: row.sharePercent });
   const { free } = getAccountShareCapacity({ goals: allGoals.value, accountId: row.accountId });
@@ -83,12 +93,12 @@ const totals = computed(() => {
             <template v-if="row.percentOfSaved !== null">
               {{ $t('goals.details.accounts.percentOfSaved', { percent: Math.round(row.percentOfSaved) }) }} ·
             </template>
-            {{ shareCaption(row) }}
+            {{ shareCaption({ row }) }}
           </div>
         </div>
       </div>
 
-      <span class="hidden text-right text-sm @2xl/goal:block">{{ row.sharePercent }}%</span>
+      <span class="hidden text-right text-sm @2xl/goal:block">{{ linkLabel({ row }) }}</span>
       <span class="hidden text-right text-sm @2xl/goal:block">
         {{ row.balance === null ? '—' : formatConverted({ row, amount: row.balance }) }}
       </span>
@@ -98,14 +108,16 @@ const totals = computed(() => {
       </div>
       <div v-else class="text-right whitespace-nowrap">
         <div class="text-sm font-semibold">{{ formatConverted({ row, amount: row.counted }) }}</div>
-        <div v-if="row.balance !== null" class="text-muted-foreground text-xs @2xl/goal:hidden">
-          {{
-            $t('goals.details.accounts.shareOf', {
-              share: row.sharePercent,
-              amount: formatAmount({ amount: row.balance }),
-            })
-          }}
+        <div
+          v-if="amountCaption({ row }) && !amountCaption({ row })!.isShort"
+          class="text-muted-foreground text-xs @2xl/goal:hidden"
+        >
+          {{ amountCaption({ row })!.text }}
         </div>
+      </div>
+
+      <div v-if="amountCaption({ row })?.isShort" class="text-warning-text col-span-full mt-1 pl-11 text-xs">
+        {{ amountCaption({ row })!.text }}
       </div>
     </div>
 

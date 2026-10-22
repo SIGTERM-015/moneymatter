@@ -61,6 +61,7 @@ const buildGoal = ({
   status: 'active',
   achievedAt: null,
   achievedAmount: null,
+  reachedHoldDays: 30,
   sortOrder: 0,
   accounts: [],
   insights: insights === null ? null : buildInsights(insights),

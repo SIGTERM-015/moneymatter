@@ -1,14 +1,25 @@
-import { GOAL_NAME_MAX_LENGTH } from '@bt/shared/types';
+import { GOAL_NAME_MAX_LENGTH, GOAL_REACHED_HOLD_DAYS_MAX } from '@bt/shared/types';
 import { boundedDecimalAmount, currencyCode, dateBound, recordId } from '@common/lib/zod/custom-types';
 import { logoFieldsShape, logoImageSchema } from '@controllers/common/logo-fields.schema';
 import { z } from 'zod';
 
 const goalAccountsSchema = z
   .array(
-    z.strictObject({
-      accountId: recordId(),
-      sharePercent: boundedDecimalAmount({ positive: true }).max(100),
-    }),
+    z
+      .strictObject({
+        accountId: recordId(),
+        sharePercent: boundedDecimalAmount({ positive: true }).max(100).nullable().optional(),
+        fixedAmount: boundedDecimalAmount({ positive: true }).nullable().optional(),
+        fixedPosition: z.int32().min(0).nullable().optional(),
+      })
+      .superRefine((share, ctx) => {
+        if ((share.sharePercent == null) === (share.fixedAmount == null)) {
+          ctx.addIssue({ code: 'custom', message: 'Set exactly one of sharePercent and fixedAmount' });
+        }
+        if (share.fixedPosition != null && share.fixedAmount == null) {
+          ctx.addIssue({ code: 'custom', path: ['fixedPosition'], message: 'fixedPosition needs fixedAmount' });
+        }
+      }),
   )
   .min(1)
   .refine((shares) => new Set(shares.map((share) => share.accountId)).size === shares.length, {
@@ -22,6 +33,7 @@ export const goalFieldsShape = {
   targetDate: dateBound().nullable().optional(),
   plannedMonthly: boundedDecimalAmount({ positive: true }).nullable().optional(),
   sortOrder: z.int32().min(0).optional(),
+  reachedHoldDays: z.int32().min(0).max(GOAL_REACHED_HOLD_DAYS_MAX).optional(),
   accounts: goalAccountsSchema,
   ...logoFieldsShape,
   logoImage: logoImageSchema,

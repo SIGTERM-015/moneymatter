@@ -12,7 +12,13 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import { useGoalStatusText } from '../composables/use-goal-status-text';
-import { GOAL_DISPLAY_TONES, getGoalDisplayKind, getGoalProgress, toGoalCurrency } from '../helpers';
+import {
+  GOAL_DISPLAY_TONES,
+  formatGoalLinkLabel,
+  getGoalDisplayKind,
+  getGoalProgress,
+  toGoalCurrency,
+} from '../helpers';
 import GoalLogo from './goal-logo.vue';
 import GoalProgressBar from './goal-progress-bar.vue';
 import { GOAL_ROW_GRID } from './goal-row-grid';
@@ -38,17 +44,27 @@ const statusText = computed(() => getStatusText({ goal: props.goal }));
 
 const accountsText = computed(() => {
   const { accounts } = props.goal;
-  const names = accounts.flatMap(({ accountId, sharePercent }) => {
-    const name = accountsRecord.value[accountId]?.name;
-    if (!name) return [];
-    return [sharePercent < FULL_SHARE ? t('goals.list.row.accountShare', { name, share: sharePercent }) : name];
+  const names = accounts.flatMap((share) => {
+    const account = accountsRecord.value[share.accountId];
+    if (!account) return [];
+    const { name } = account;
+    if (share.fixedAmount !== null) {
+      const amount = formatGoalLinkLabel({
+        share,
+        currencyCode: account.currencyCode,
+        formatAmount: formatWholeOrCompactAmount,
+      });
+      return [t('goals.list.row.accountFixed', { name, amount })];
+    }
+    const { sharePercent } = share;
+    return [sharePercent! < FULL_SHARE ? t('goals.list.row.accountShare', { name, share: sharePercent }) : name];
   });
   if (names.length === accounts.length) return names.join(' · ');
   return t('goals.details.accounts.count', { count: accounts.length }, accounts.length);
 });
 
 const timingText = computed(() =>
-  props.goal.achievedAt
+  props.goal.achievedAt && kind.value === 'reached'
     ? t('goals.list.row.reachedOn', { date: format(new Date(props.goal.achievedAt), 'd MMM yyyy') })
     : targetDateText(props.goal),
 );

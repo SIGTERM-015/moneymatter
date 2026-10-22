@@ -11,7 +11,15 @@ import {
   extractId,
 } from './api-client';
 
-export type GoalShare = { accountId: string; sharePercent: number };
+export type GoalShare =
+  | { accountId: string; sharePercent: number }
+  | { accountId: string; fixedAmount: number; fixedPosition?: number };
+export type GoalLink = {
+  accountId: string;
+  sharePercent: number | null;
+  fixedAmount: number | null;
+  fixedPosition: number | null;
+};
 export type GoalStatus = 'active' | 'paused' | 'archived';
 
 type GoalFields = {
@@ -20,11 +28,14 @@ type GoalFields = {
   currencyCode: string;
   targetDate?: string | null;
   plannedMonthly?: number | null;
+  reachedHoldDays?: number;
   accounts: GoalShare[];
 };
 
-export type Goal = GoalFields & {
+export type Goal = Omit<GoalFields, 'accounts' | 'reachedHoldDays'> & {
   id: string;
+  accounts: GoalLink[];
+  reachedHoldDays: number;
   status: GoalStatus;
   achievedAt: string | null;
   achievedAmount: number | null;

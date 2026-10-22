@@ -202,7 +202,7 @@ const shareFor = ({
   goal,
   accountId,
 }: {
-  goal: { accounts: { accountId: string; sharePercent: number }[] };
+  goal: { accounts: { accountId: string; sharePercent: number | null }[] };
   accountId: string;
 }) => Number(goal.accounts.find((account) => account.accountId === accountId)?.sharePercent);
 

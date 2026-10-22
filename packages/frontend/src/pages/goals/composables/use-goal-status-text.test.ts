@@ -1,5 +1,5 @@
 import type { GoalInsights } from '@bt/shared/types';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('vue-i18n', () => ({
@@ -29,6 +29,7 @@ describe('useGoalStatusText', () => {
     const goal = {
       status: 'active' as const,
       achievedAt: null,
+      reachedHoldDays: 30,
       insights: buildInsights({ status: 'behind', etaMonths: 30, daysLeft: 305 }),
     };
     expect(statusText({ goal })).toEqual({ key: 'goals.status.behindBy', count: 20, date: '', plural: 20 });
@@ -37,7 +38,8 @@ describe('useGoalStatusText', () => {
   it('shows a goal reached once it was achieved, even after dipping below target', () => {
     const goal = {
       status: 'active' as const,
-      achievedAt: '2026-03-14T00:00:00Z',
+      achievedAt: subDays(new Date(), 5).toISOString(),
+      reachedHoldDays: 30,
       insights: buildInsights({ status: 'behind' }),
     };
     expect(statusText({ goal })).toMatchObject({ key: 'goals.status.reached' });

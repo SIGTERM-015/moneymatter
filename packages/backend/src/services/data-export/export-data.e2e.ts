@@ -1523,7 +1523,7 @@ describe('Data export (POST /user/data-export)', () => {
   });
 
   describe('Goals', () => {
-    it('exports goals with decimal amounts and named account shares', async () => {
+    it('exports goals with decimal amounts, named account shares and fixed amounts', async () => {
       const savings = await helpers.createAccount({
         payload: helpers.buildAccountPayload({ name: 'Goal savings' }),
         raw: true,
@@ -1540,7 +1540,7 @@ describe('Data export (POST /user/data-export)', () => {
           plannedMonthly: 150,
           accounts: [
             { accountId: savings.id, sharePercent: 60 },
-            { accountId: cash.id, sharePercent: 33.33 },
+            { accountId: cash.id, fixedAmount: 500 },
           ],
         },
         raw: true,
@@ -1566,7 +1566,7 @@ describe('Data export (POST /user/data-export)', () => {
           currency,
           targetDate: '2030-06-01',
           plannedMonthly: 150,
-          accounts: ['Goal cash: 33.33%', 'Goal savings: 60%'],
+          accounts: [`Goal cash: 500 ${currency} fixed`, 'Goal savings: 60%'],
           achievedAt: '',
           achievedAmount: null,
         },
@@ -1589,7 +1589,7 @@ describe('Data export (POST /user/data-export)', () => {
       });
       expect(rows.find((row) => row.Name === 'Trip')).toMatchObject({
         TargetAmount: '2500.5',
-        Accounts: 'Goal cash: 33.33%; Goal savings: 60%',
+        Accounts: `Goal cash: 500 ${currency} fixed; Goal savings: 60%`,
       });
     });
 

@@ -1,5 +1,13 @@
 import { ApiErrorResponseError } from '@/js/errors';
-import { ACCOUNT_CATEGORIES, ACCOUNT_STATUSES, API_ERROR_CODES, type GoalModel, type RecordId } from '@bt/shared/types';
+import {
+  ACCOUNT_CATEGORIES,
+  ACCOUNT_STATUSES,
+  API_ERROR_CODES,
+  GOAL_REACHED_HOLD_DAYS_MAX,
+  type GoalAccountShare,
+  type GoalModel,
+  type RecordId,
+} from '@bt/shared/types';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -16,6 +24,13 @@ import {
 
 const id = (value: string) => value as RecordId;
 
+const buildShare = (share: Partial<GoalAccountShare> & Pick<GoalAccountShare, 'accountId'>): GoalAccountShare => ({
+  sharePercent: null,
+  fixedAmount: null,
+  fixedPosition: null,
+  ...share,
+});
+
 const buildState = (overrides: Partial<GoalFormState> = {}): GoalFormState => ({
   name: 'Car',
   currencyCode: 'UAH',
@@ -23,7 +38,8 @@ const buildState = (overrides: Partial<GoalFormState> = {}): GoalFormState => ({
   targetDate: null,
   hasPlannedMonthly: false,
   plannedMonthly: null,
-  accounts: [{ accountId: id('a1'), sharePercent: 100 }],
+  accounts: [buildShare({ accountId: id('a1'), sharePercent: 100 })],
+  reachedHoldDays: 30,
   ...overrides,
 });
 
@@ -36,7 +52,7 @@ const buildGoal = (overrides: Partial<GoalModel> = {}) =>
     targetDate: '2027-06-30',
     plannedMonthly: 300,
     status: 'active',
-    accounts: [{ accountId: id('a1'), sharePercent: 25 }],
+    accounts: [buildShare({ accountId: id('a1'), sharePercent: 25 })],
     ...overrides,
   }) as GoalModel;
 
@@ -50,6 +66,7 @@ describe('goalFormStateFrom', () => {
       hasPlannedMonthly: false,
       plannedMonthly: null,
       accounts: [],
+      reachedHoldDays: 30,
     });
   });
 
@@ -68,7 +85,7 @@ describe('goalFormStateFrom', () => {
   });
 
   it('starts from the goal but takes the what-if values', () => {
-    const accounts = [{ accountId: id('a2'), sharePercent: 40 }];
+    const accounts = [buildShare({ accountId: id('a2'), sharePercent: 40 })];
     const state = goalFormStateFrom({
       goal: buildGoal(),
       initialValues: { plannedMonthly: 450, targetDate: null, accounts },
@@ -93,13 +110,20 @@ describe('goalFormStateFrom', () => {
 
 describe('validateGoalForm', () => {
   const today = '2026-10-20';
+  const accountsById = { [id('a1')]: { currencyCode: 'UAH' }, [id('a2')]: { currencyCode: 'USD' } };
 
   it('passes a complete form', () => {
-    expect(Object.values(validateGoalForm({ state: buildState(), today })).every((error) => error === null)).toBe(true);
+    expect(
+      Object.values(validateGoalForm({ state: buildState(), accountsById, today })).every((error) => error === null),
+    ).toBe(true);
   });
 
   it('flags a blank name, a missing amount and no accounts', () => {
-    const errors = validateGoalForm({ state: buildState({ name: '  ', targetAmount: 0, accounts: [] }), today });
+    const errors = validateGoalForm({
+      state: buildState({ name: '  ', targetAmount: 0, accounts: [] }),
+      accountsById,
+      today,
+    });
 
     expect(errors.name).toBe('goals.form.errors.nameRequired');
     expect(errors.targetAmount).toBe('goals.form.errors.amountRequired');
@@ -107,18 +131,58 @@ describe('validateGoalForm', () => {
   });
 
   it('needs a planned amount only while the switch is on', () => {
-    expect(validateGoalForm({ state: buildState({ hasPlannedMonthly: true }), today }).plannedMonthly).toBe(
-      'goals.form.errors.amountRequired',
-    );
-    expect(validateGoalForm({ state: buildState({ plannedMonthly: null }), today }).plannedMonthly).toBeNull();
+    expect(
+      validateGoalForm({ state: buildState({ hasPlannedMonthly: true }), accountsById, today }).plannedMonthly,
+    ).toBe('goals.form.errors.amountRequired');
+    expect(
+      validateGoalForm({ state: buildState({ plannedMonthly: null }), accountsById, today }).plannedMonthly,
+    ).toBeNull();
   });
 
   it('rejects a date that is not in the future unless it is the stored one', () => {
     const state = buildState({ targetDate: new Date(2026, 9, 20) });
 
-    expect(validateGoalForm({ state, today }).targetDate).toBe('goals.form.errors.dateNotFuture');
-    expect(validateGoalForm({ state, today, storedTargetDate: '2026-10-20' }).targetDate).toBeNull();
-    expect(validateGoalForm({ state: buildState({ targetDate: new Date(2026, 9, 21) }), today }).targetDate).toBeNull();
+    expect(validateGoalForm({ state, accountsById, today }).targetDate).toBe('goals.form.errors.dateNotFuture');
+    expect(validateGoalForm({ state, accountsById, today, storedTargetDate: '2026-10-20' }).targetDate).toBeNull();
+    expect(
+      validateGoalForm({ state: buildState({ targetDate: new Date(2026, 9, 21) }), accountsById, today }).targetDate,
+    ).toBeNull();
+  });
+
+  it('flags fixed amounts that alone stay below the target, only when every account is in the goal currency', () => {
+    const fixed = buildShare({ accountId: id('a1'), fixedAmount: 500_000, fixedPosition: 0 });
+    const errorsFor = ({ accounts }: { accounts: GoalAccountShare[] }) =>
+      validateGoalForm({ state: buildState({ accounts }), accountsById, today }).accounts;
+
+    expect(errorsFor({ accounts: [fixed] })).toBe('goals.form.errors.fixedBelowTarget');
+    expect(errorsFor({ accounts: [{ ...fixed, fixedAmount: 600_000 }] })).toBeNull();
+    expect(errorsFor({ accounts: [fixed, buildShare({ accountId: id('a1'), sharePercent: 10 })] })).toBeNull();
+    expect(errorsFor({ accounts: [fixed, { ...fixed, accountId: id('a2') }] })).toBeNull();
+  });
+
+  it('compares fixed amounts to the target exactly, in cents', () => {
+    const state = buildState({
+      targetAmount: 0.8,
+      accounts: [
+        buildShare({ accountId: id('a1'), fixedAmount: 0.1, fixedPosition: 0 }),
+        buildShare({ accountId: id('a1'), fixedAmount: 0.7, fixedPosition: 1 }),
+      ],
+    });
+    expect(validateGoalForm({ state, accountsById, today }).accounts).toBeNull();
+  });
+
+  it.each([null, -1, 1.5, GOAL_REACHED_HOLD_DAYS_MAX + 1])('rejects %s hold days', (reachedHoldDays) => {
+    expect(validateGoalForm({ state: buildState({ reachedHoldDays }), accountsById, today }).reachedHoldDays).toBe(
+      'goals.form.errors.holdDaysRange',
+    );
+  });
+
+  it('accepts hold days from 0 to the max', () => {
+    for (const reachedHoldDays of [0, GOAL_REACHED_HOLD_DAYS_MAX]) {
+      expect(
+        validateGoalForm({ state: buildState({ reachedHoldDays }), accountsById, today }).reachedHoldDays,
+      ).toBeNull();
+    }
   });
 });
 
@@ -134,7 +198,8 @@ describe('buildGoalPayload', () => {
       targetAmount: 600_000,
       targetDate: '2028-06-30',
       plannedMonthly: null,
-      accounts: [{ accountId: id('a1'), sharePercent: 100 }],
+      accounts: [buildShare({ accountId: id('a1'), sharePercent: 100 })],
+      reachedHoldDays: 30,
     });
   });
 
@@ -152,25 +217,38 @@ describe('buildGoalPayload', () => {
 describe('counted amounts', () => {
   it('subtracts the credit limit, clamps at 0 and applies the share', () => {
     const accountsById = {
-      [id('a1')]: { refCurrentBalance: 1200, refCreditLimit: 200 },
-      [id('a2')]: { refCurrentBalance: -50, refCreditLimit: 0 },
+      [id('a1')]: { currentBalance: 1200, creditLimit: 200, refCurrentBalance: 1200 },
+      [id('a2')]: { currentBalance: -50, creditLimit: 0, refCurrentBalance: -50 },
     };
     const shares = [
-      { accountId: id('a1'), sharePercent: 25 },
-      { accountId: id('a2'), sharePercent: 100 },
+      buildShare({ accountId: id('a1'), sharePercent: 25 }),
+      buildShare({ accountId: id('a2'), sharePercent: 100 }),
     ];
 
-    expect(sumCountedAmount({ shares, accountsById })).toBe(250);
+    expect(sumCountedAmount({ shares, accountsById, holdersOf: () => [] })).toBe(250);
   });
 
   it('sums the shares and skips accounts it does not know', () => {
-    const accountsById = { [id('a1')]: { refCurrentBalance: 1000, refCreditLimit: 0 } };
+    const accountsById = { [id('a1')]: { currentBalance: 1000, creditLimit: 0, refCurrentBalance: 1000 } };
     const shares = [
-      { accountId: id('a1'), sharePercent: 50 },
-      { accountId: id('gone'), sharePercent: 100 },
+      buildShare({ accountId: id('a1'), sharePercent: 50 }),
+      buildShare({ accountId: id('gone'), sharePercent: 100 }),
     ];
 
-    expect(sumCountedAmount({ shares, accountsById })).toBe(500);
+    expect(sumCountedAmount({ shares, accountsById, holdersOf: () => [] })).toBe(500);
+  });
+
+  it('is unknown when one account has no rate', () => {
+    const accountsById = {
+      [id('a1')]: { currentBalance: 1000, creditLimit: 0, refCurrentBalance: 1000 },
+      [id('a2')]: { currentBalance: 100, creditLimit: 0, refCurrentBalance: 0 },
+    };
+    const shares = [
+      buildShare({ accountId: id('a1'), sharePercent: 50 }),
+      buildShare({ accountId: id('a2'), sharePercent: 50 }),
+    ];
+
+    expect(sumCountedAmount({ shares, accountsById, holdersOf: () => [] })).toBeNull();
   });
 });
 

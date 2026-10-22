@@ -1,11 +1,13 @@
 import { isApiErrorWithCode } from '@/js/errors';
-import { accountGoalValue, neededMonthly, roundShare } from '@bt/shared/goals/goal-math';
+import { neededMonthly, roundShare } from '@bt/shared/goals/goal-math';
 import {
   ACCOUNT_STATUSES,
   API_ERROR_CODES,
   type AccountModel,
   type CreateGoalPayload,
   GOAL_ELIGIBLE_ACCOUNT_CATEGORIES,
+  GOAL_REACHED_HOLD_DAYS_DEFAULT,
+  GOAL_REACHED_HOLD_DAYS_MAX,
   type GoalAccountShare,
   type GoalModel,
   type GoalShareCapacityExceededDetails,
@@ -14,6 +16,7 @@ import {
 import { format, parseISO } from 'date-fns';
 
 import type { GoalWhatIfApplyValues } from './composables/use-goal-what-if';
+import { type FixedAmountHolder, countedFromAccount } from './helpers';
 
 export interface GoalFormState {
   name: string;
@@ -23,10 +26,11 @@ export interface GoalFormState {
   hasPlannedMonthly: boolean;
   plannedMonthly: number | null;
   accounts: GoalAccountShare[];
+  reachedHoldDays: number | null;
 }
 
 export type GoalFormErrors = Record<
-  'name' | 'targetAmount' | 'targetDate' | 'plannedMonthly' | 'accounts',
+  'name' | 'targetAmount' | 'targetDate' | 'plannedMonthly' | 'accounts' | 'reachedHoldDays',
   string | null
 >;
 
@@ -59,16 +63,41 @@ export const goalFormStateFrom = ({
     hasPlannedMonthly,
     plannedMonthly: hasPlannedMonthly ? plannedMonthly : null,
     accounts: accounts.map((share) => ({ ...share })),
+    reachedHoldDays: goal?.reachedHoldDays ?? GOAL_REACHED_HOLD_DAYS_DEFAULT,
   };
 };
+
+/**
+ * Fixed amounts alone can never pass their sum. Checked only when every account is in the goal
+ * currency; otherwise the server, which knows the rates, refuses it.
+ */
+const isFixedBelowTarget = ({
+  state,
+  accountsById,
+}: {
+  state: GoalFormState;
+  accountsById: Record<string, Pick<AccountModel, 'currencyCode'> | undefined>;
+}) => {
+  const { accounts, targetAmount } = state;
+  if (!accounts.length || !isPositive(targetAmount)) return false;
+  if (accounts.some((share) => share.fixedAmount === null)) return false;
+  if (accounts.some((share) => accountsById[share.accountId]?.currencyCode !== state.currencyCode)) return false;
+  const toCents = (amount: number) => Math.round(amount * 100);
+  return accounts.reduce((sum, share) => sum + toCents(share.fixedAmount!), 0) < toCents(targetAmount);
+};
+
+const isHoldDaysValid = ({ days }: { days: number | null }) =>
+  days !== null && Number.isInteger(days) && days >= 0 && days <= GOAL_REACHED_HOLD_DAYS_MAX;
 
 /** Values are i18n keys. A stored past date stays valid so an overdue goal can still be saved. */
 export const validateGoalForm = ({
   state,
+  accountsById,
   storedTargetDate = null,
   today = toDateKey(new Date()),
 }: {
   state: GoalFormState;
+  accountsById: Record<string, Pick<AccountModel, 'currencyCode'> | undefined>;
   storedTargetDate?: string | null;
   today?: string;
 }): GoalFormErrors => {
@@ -81,7 +110,12 @@ export const validateGoalForm = ({
       targetDate && targetDate <= today && targetDate !== storedTargetDate ? 'goals.form.errors.dateNotFuture' : null,
     plannedMonthly:
       state.hasPlannedMonthly && !isPositive(state.plannedMonthly) ? 'goals.form.errors.amountRequired' : null,
-    accounts: state.accounts.length ? null : 'goals.form.errors.accountsRequired',
+    accounts: !state.accounts.length
+      ? 'goals.form.errors.accountsRequired'
+      : isFixedBelowTarget({ state, accountsById })
+        ? 'goals.form.errors.fixedBelowTarget'
+        : null,
+    reachedHoldDays: isHoldDaysValid({ days: state.reachedHoldDays }) ? null : 'goals.form.errors.holdDaysRange',
   };
 };
 
@@ -96,22 +130,25 @@ export const buildGoalPayload = ({ state }: { state: GoalFormState }): CreateGoa
     targetDate: state.targetDate ? toDateKey(state.targetDate) : null,
     plannedMonthly: state.hasPlannedMonthly ? state.plannedMonthly : null,
     accounts: state.accounts,
+    reachedHoldDays: state.reachedHoldDays ?? GOAL_REACHED_HOLD_DAYS_DEFAULT,
   };
 };
 
-/** Base-currency decimals; shares of accounts missing from `accountsById` count 0. */
+/** Base-currency decimals; shares of accounts missing from `accountsById` count 0. Null when a rate is unknown. */
 export const sumCountedAmount = ({
   shares,
   accountsById,
+  holdersOf,
 }: {
   shares: GoalAccountShare[];
-  accountsById: Record<string, Pick<AccountModel, 'refCurrentBalance' | 'refCreditLimit'> | undefined>;
+  accountsById: Record<string, Pick<AccountModel, 'currentBalance' | 'creditLimit' | 'refCurrentBalance'> | undefined>;
+  holdersOf: (params: { accountId: RecordId }) => FixedAmountHolder[];
 }) =>
-  shares.reduce((sum, { accountId, sharePercent }) => {
-    const account = accountsById[accountId];
-    if (!account) return sum;
-    const { refCurrentBalance: balance, refCreditLimit: creditLimit } = account;
-    return sum + accountGoalValue({ balance, creditLimit, sharePercent });
+  shares.reduce<number | null>((sum, share) => {
+    const account = accountsById[share.accountId];
+    if (!account || sum === null) return sum;
+    const counted = countedFromAccount({ account, share, holders: holdersOf({ accountId: share.accountId }) });
+    return counted === null ? null : sum + counted;
   }, 0);
 
 /** Owned accounts of an eligible category; an archived one only while the goal already links it. */
@@ -139,6 +176,7 @@ export const getShareError = ({
 
 export type GoalFormServerError =
   | { field: 'accounts'; details: GoalShareCapacityExceededDetails | null }
+  | { field: 'fixedBelowTarget' }
   | { field: 'currencyCode'; currencyCode: string; message: string | null };
 
 export const getGoalFormServerError = ({
@@ -152,6 +190,7 @@ export const getGoalFormServerError = ({
     const details = error.data.details as GoalShareCapacityExceededDetails | undefined;
     return { field: 'accounts', details: details ?? null };
   }
+  if (isApiErrorWithCode(error, API_ERROR_CODES.goalFixedAmountsBelowTarget)) return { field: 'fixedBelowTarget' };
   if (isApiErrorWithCode(error, API_ERROR_CODES.goalCurrencyRateUnavailable)) {
     return { field: 'currencyCode', currencyCode, message: error.data.message || null };
   }

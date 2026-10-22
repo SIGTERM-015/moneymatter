@@ -1,5 +1,7 @@
+import { toLocalCurrencyNumber } from '@/js/helpers';
 import {
   FULL_SHARE,
+  accountGoalValue,
   etaDate,
   goalDisplayStatus,
   roundShare,
@@ -8,7 +10,9 @@ import {
 } from '@bt/shared/goals/goal-math';
 import {
   ACCOUNT_CATEGORIES,
+  type AccountModel,
   GOAL_STATUSES_HOLDING_SHARES,
+  type GoalAccountShare,
   type GoalDisplayStatus,
   type GoalInsights,
   type GoalModel,
@@ -27,11 +31,11 @@ export type GoalSection = 'active' | 'ended' | 'archived';
 
 export const GOAL_SECTION_ORDER: readonly GoalSection[] = ['active', 'ended', 'archived'];
 
-type SectionFields = Pick<GoalModel, 'status' | 'achievedAt' | 'insights'>;
+type SectionFields = Pick<GoalModel, 'status' | 'achievedAt' | 'reachedHoldDays' | 'insights'>;
 
 export const getGoalSection = ({ goal }: { goal: SectionFields }): GoalSection => {
   if (!GOAL_STATUSES_HOLDING_SHARES.includes(goal.status)) return 'archived';
-  if (goal.achievedAt || goal.insights?.status === 'reached') return 'ended';
+  if (goalDisplayStatus(goal) === 'reached') return 'ended';
   return 'active';
 };
 
@@ -180,12 +184,86 @@ export const getAccountShareCapacity = ({
   const holders = goals
     .filter((goal) => goal.id !== editingGoal?.id && GOAL_STATUSES_HOLDING_SHARES.includes(goal.status))
     .flatMap((goal) =>
-      goal.accounts
-        .filter((share) => share.accountId === accountId)
-        .map((share) => ({ name: goal.name, sharePercent: share.sharePercent })),
+      goal.accounts.flatMap(({ accountId: linkedId, sharePercent }) =>
+        linkedId === accountId && sharePercent !== null ? [{ name: goal.name, sharePercent }] : [],
+      ),
     );
   const free = Math.max(0, roundShare(FULL_SHARE - sumBy(holders, 'sharePercent')));
   const skipsCapacity = !!editingGoal && !GOAL_STATUSES_HOLDING_SHARES.includes(editingGoal.status);
 
   return { free, max: skipsCapacity ? FULL_SHARE : free, holders };
+};
+
+export interface FixedAmountHolder {
+  goalId: RecordId;
+  name: string;
+  /** In the account's currency. */
+  fixedAmount: number;
+}
+
+/** The other share-holding goals' fixed amounts on the account, in the order they are filled. */
+export const getAccountFixedHolders = ({
+  goals,
+  accountId,
+  editingGoalId,
+}: {
+  goals: Pick<GoalModel, 'id' | 'name' | 'status' | 'accounts'>[];
+  accountId: RecordId;
+  editingGoalId?: RecordId;
+}): FixedAmountHolder[] =>
+  goals
+    .filter((goal) => goal.id !== editingGoalId && GOAL_STATUSES_HOLDING_SHARES.includes(goal.status))
+    .flatMap((goal) =>
+      goal.accounts.flatMap((share) =>
+        share.accountId === accountId && share.fixedAmount !== null
+          ? [{ goalId: goal.id, name: goal.name, fixedAmount: share.fixedAmount, position: share.fixedPosition ?? 0 }]
+          : [],
+      ),
+    )
+    .sort((a, b) => a.position - b.position || a.goalId.localeCompare(b.goalId))
+    .map(({ position: _position, ...holder }) => holder);
+
+/**
+ * What a share counts from the account now, as a base-currency decimal; null when the account's
+ * rate is unknown. A fixed share sits at its `fixedPosition` among `holders`, or after them.
+ */
+export const countedFromAccount = ({
+  account,
+  share,
+  holders,
+}: {
+  account: Pick<AccountModel, 'currentBalance' | 'creditLimit' | 'refCurrentBalance'>;
+  share: Pick<GoalAccountShare, 'sharePercent' | 'fixedAmount' | 'fixedPosition'>;
+  holders: Pick<FixedAmountHolder, 'fixedAmount'>[];
+}): number | null => {
+  const position = Math.min(share.fixedPosition ?? holders.length, holders.length);
+  const counted = accountGoalValue({
+    balance: account.currentBalance,
+    creditLimit: account.creditLimit,
+    sharePercent: share.sharePercent,
+    fixedAmount: share.fixedAmount,
+    fixedAhead: sumBy(holders.slice(0, position), 'fixedAmount'),
+    fixedOthers: sumBy(holders, 'fixedAmount'),
+  });
+  if (!counted) return 0;
+  // A zero base balance against a non-zero own one means the rate is unknown, not zero.
+  if (!account.refCurrentBalance) return null;
+  // ponytail: the account's base-to-own balance ratio stands in for today's rate
+  return Math.round(((counted * account.refCurrentBalance) / account.currentBalance) * 100) / 100;
+};
+
+/** "40%", or the fixed amount in the account's currency; a bare number while that currency is unknown. */
+export const formatGoalLinkLabel = ({
+  share,
+  currencyCode,
+  formatAmount,
+}: {
+  share: Pick<GoalAccountShare, 'sharePercent' | 'fixedAmount'>;
+  currencyCode: string | undefined;
+  formatAmount: (params: { amount: number; currencyCode: string }) => string;
+}) => {
+  if (share.fixedAmount === null) return `${share.sharePercent}%`;
+  return currencyCode
+    ? formatAmount({ amount: share.fixedAmount, currencyCode })
+    : toLocalCurrencyNumber(share.fixedAmount);
 };

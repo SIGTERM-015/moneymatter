@@ -147,6 +147,61 @@ describe('Goal insights', () => {
     ]);
   });
 
+  it('takes fixed amounts first in the account’s order, then splits what is left between shares', async () => {
+    const account = await createAccount({ initialBalance: 1200 });
+    const create = ({
+      targetAmount,
+      link,
+    }: {
+      targetAmount: number;
+      link: { fixedAmount?: number; sharePercent?: number };
+    }) => helpers.createGoal({ payload: { targetAmount, accounts: [{ accountId: account.id, ...link }] }, raw: true });
+
+    const emergency = await create({ targetAmount: 1000, link: { fixedAmount: 1000 } });
+    const laptop = await create({ targetAmount: 500, link: { fixedAmount: 500 } });
+    const car = await create({ targetAmount: 1000, link: { sharePercent: 10 } });
+    const valuesOf = async () => {
+      const byId = new Map((await helpers.listGoals({ raw: true })).map((goal) => [goal.id, goal.insights!]));
+      return [emergency, laptop, car].map((goal) => byId.get(goal.id)!.currentValue);
+    };
+
+    expect(await valuesOf()).toEqual([1000, 200, 0]);
+
+    await helpers.updateGoal({
+      goalId: laptop.id,
+      payload: { accounts: [{ accountId: account.id, fixedAmount: 500, fixedPosition: 0 }] },
+      raw: true,
+    });
+    expect(await valuesOf()).toEqual([700, 500, 0]);
+
+    await helpers.createTransaction({
+      payload: helpers.buildTransactionPayload({
+        accountId: account.id,
+        amount: 800,
+        transactionType: TRANSACTION_TYPES.income,
+      }),
+      raw: true,
+    });
+    expect(await valuesOf()).toEqual([1000, 500, 50]);
+
+    await helpers.updateGoal({ goalId: emergency.id, payload: { status: 'archived' }, raw: true });
+    expect((await valuesOf()).slice(1)).toEqual([500, 150]);
+  });
+
+  it('converts a fixed amount from the account currency to base', async () => {
+    await helpers.addUserCurrencies({ currencyCodes: ['USD'] });
+    const account = await createAccount({ initialBalance: 500, currencyCode: 'USD' });
+
+    const goal = await helpers.createGoal({
+      payload: { accounts: [{ accountId: account.id, fixedAmount: 300 }], currencyCode: 'USD', targetAmount: 300 },
+      raw: true,
+    });
+    const insights = goal.insights!;
+
+    expect(insights.input.accounts[0]!.fixedAmount).toBe(toBaseDecimal({ amount: 300, rate: insights.rateToBase }));
+    expect(insights.status).toBe('reached');
+  });
+
   it('subtracts the credit limit from the balance', async () => {
     const account = await helpers.createAccount({
       payload: helpers.buildAccountPayload({

@@ -6,10 +6,13 @@ import type { RecordId } from './record-id';
 export const GOAL_STATUSES = ['active', 'paused', 'archived'] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
-/** Goals in these statuses count toward each linked account's 100% share capacity. */
+/** Goals in these statuses hold their links: shares count toward the 100% capacity, fixed amounts take balance. */
 export const GOAL_STATUSES_HOLDING_SHARES: readonly GoalStatus[] = ['active', 'paused'];
 
 export const GOAL_NAME_MAX_LENGTH = 100;
+
+export const GOAL_REACHED_HOLD_DAYS_DEFAULT = 30;
+export const GOAL_REACHED_HOLD_DAYS_MAX = 365;
 
 /** Owned accounts of these categories may back a goal; debt and non-cash categories never do. */
 export const GOAL_ELIGIBLE_ACCOUNT_CATEGORIES: readonly ACCOUNT_CATEGORIES[] = [
@@ -21,11 +24,25 @@ export const GOAL_ELIGIBLE_ACCOUNT_CATEGORIES: readonly ACCOUNT_CATEGORIES[] = [
   ACCOUNT_CATEGORIES.crypto,
 ];
 
+/**
+ * How one account backs a goal: exactly one of `sharePercent` and `fixedAmount` is set. Fixed
+ * amounts come out of the balance first, in `fixedPosition` order; shares split what's left.
+ */
 export interface GoalAccountShare {
   accountId: RecordId;
-  /** Share of the account's balance that counts toward the goal, 0 < x ≤ 100, two decimals. */
-  sharePercent: number;
+  /** Share of the balance left after fixed amounts, 0 < x ≤ 100, two decimals. */
+  sharePercent: number | null;
+  /** Decimal in the account's currency. */
+  fixedAmount: number | null;
+  /** Lower is filled first among the account's fixed amounts. Set with `fixedAmount`. */
+  fixedPosition: number | null;
 }
+
+/**
+ * `fixedPosition` on a write is the index among the account's other fixed amounts to insert at;
+ * omitted keeps the stored place, or appends a new one.
+ */
+export type GoalAccountShareInput = Pick<GoalAccountShare, 'accountId'> & Partial<Omit<GoalAccountShare, 'accountId'>>;
 
 export interface GoalModel extends EntityLogoFields {
   id: RecordId;
@@ -43,6 +60,8 @@ export interface GoalModel extends EntityLogoFields {
   /** Decimal. */
   achievedAmount: number | null;
   sortOrder: number;
+  /** Days after `achievedAt` during which a dip below the target still reads as reached. */
+  reachedHoldDays: number;
   accounts: GoalAccountShare[];
   /** Null when today's rate from the goal currency to the base currency is unavailable. */
   insights: GoalInsights | null;
@@ -67,7 +86,15 @@ export type GoalDisplayStatus = GoalProgressStatus | 'paused' | 'archived' | 'no
 export type GoalScheduleOffset = { kind: 'early' | 'onTime' | 'late'; months: number };
 
 /** One linked account as the goal math sees it. Amounts are base-currency decimals. */
-export interface GoalAccountHistory extends GoalAccountShare {
+export interface GoalAccountHistory {
+  accountId: RecordId;
+  sharePercent: number | null;
+  /** At today's rate, past points included. */
+  fixedAmount: number | null;
+  /** Other goals' fixed amounts on the account filled before this one's. */
+  fixedAhead: number;
+  /** All other goals' fixed amounts on the account; a share splits what's left after them. */
+  fixedOthers: number;
   currentBalance: number;
   /** Subtracted from every balance, past points included, before the share applies. */
   creditLimit: number;
@@ -129,7 +156,8 @@ export interface CreateGoalPayload extends EntityLogoWritePayload {
   /** Decimal per month. */
   plannedMonthly?: number | null;
   sortOrder?: number;
-  accounts: GoalAccountShare[];
+  reachedHoldDays?: number;
+  accounts: GoalAccountShareInput[];
 }
 
 /** `accounts`, when sent, replaces the whole set. */

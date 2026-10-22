@@ -1,10 +1,11 @@
-import type { AccountModel, GoalAccountHistory, GoalInsights, RecordId } from '@bt/shared/types';
+import type { AccountModel, GoalAccountHistory, GoalAccountShare, GoalInsights, RecordId } from '@bt/shared/types';
 import { describe, expect, it } from 'vitest';
 
 import {
   MAX_PROJECTION_MONTHS,
   formatRowAmount,
   getAccountBreakdown,
+  getAccountRowCaption,
   getGoalHistory,
   getGoalNeed,
   getHistorySummary,
@@ -14,9 +15,19 @@ import {
 
 const id = (value: string) => value as RecordId;
 
+const buildShare = (share: Partial<GoalAccountShare> & Pick<GoalAccountShare, 'accountId'>): GoalAccountShare => ({
+  sharePercent: null,
+  fixedAmount: null,
+  fixedPosition: null,
+  ...share,
+});
+
 const buildHistory = (overrides: Partial<GoalAccountHistory> = {}): GoalAccountHistory => ({
   accountId: id('a'),
   sharePercent: 100,
+  fixedAmount: null,
+  fixedAhead: 0,
+  fixedOthers: 0,
   currentBalance: 0,
   creditLimit: 0,
   firstDataDate: null,
@@ -57,8 +68,8 @@ describe('getAccountBreakdown', () => {
 
     const rows = getAccountBreakdown({
       accounts: [
-        { accountId: id('a'), sharePercent: 25 },
-        { accountId: id('b'), sharePercent: 100 },
+        buildShare({ accountId: id('a'), sharePercent: 25 }),
+        buildShare({ accountId: id('b'), sharePercent: 100 }),
       ],
       insights,
     });
@@ -72,9 +83,9 @@ describe('getAccountBreakdown', () => {
     const insights = buildInsights({
       input: { ...buildInsights().input, accounts: [buildHistory({ currentBalance: -50 })] },
     });
-    expect(getAccountBreakdown({ accounts: [{ accountId: id('a'), sharePercent: 100 }], insights })[0]!.counted).toBe(
-      0,
-    );
+    expect(
+      getAccountBreakdown({ accounts: [buildShare({ accountId: id('a'), sharePercent: 100 })], insights })[0]!.counted,
+    ).toBe(0);
   });
 
   it('puts the cent rounding on the biggest row so rows add up to the saved amount', () => {
@@ -91,25 +102,101 @@ describe('getAccountBreakdown', () => {
     });
     const rows = getAccountBreakdown({
       accounts: [
-        { accountId: id('a'), sharePercent: 100 },
-        { accountId: id('b'), sharePercent: 100 },
+        buildShare({ accountId: id('a'), sharePercent: 100 }),
+        buildShare({ accountId: id('b'), sharePercent: 100 }),
       ],
       insights,
     });
     expect(rows.map((row) => row.counted)).toEqual([0.01, 0]);
   });
 
-  it('keeps a linked account without history as a row with no amounts', () => {
-    const insights = buildInsights({ input: { ...buildInsights().input, accounts: [] } });
-    expect(getAccountBreakdown({ accounts: [{ accountId: id('a'), sharePercent: 40 }], insights })).toEqual([
-      { accountId: id('a'), sharePercent: 40, balance: null, counted: null, percentOfSaved: null },
+  it('marks a fixed amount short only when the account cannot cover it, not from the rounding drift', () => {
+    const insights = buildInsights({
+      currentValue: 119.95,
+      input: {
+        ...buildInsights().input,
+        accounts: [
+          buildHistory({ accountId: id('a'), sharePercent: null, fixedAmount: 100, currentBalance: 100 }),
+          buildHistory({ accountId: id('b'), sharePercent: null, fixedAmount: 50, currentBalance: 20 }),
+        ],
+      },
+    });
+    const rows = getAccountBreakdown({
+      accounts: [
+        buildShare({ accountId: id('a'), fixedAmount: 100 }),
+        buildShare({ accountId: id('b'), fixedAmount: 50 }),
+      ],
+      insights,
+    });
+    expect(rows.map(({ accountId, counted, isShort }) => ({ accountId, counted, isShort }))).toEqual([
+      { accountId: id('a'), counted: 99.95, isShort: false },
+      { accountId: id('b'), counted: 20, isShort: true },
     ]);
   });
 
+  it('keeps a linked account without history as a row with no amounts', () => {
+    const insights = buildInsights({ input: { ...buildInsights().input, accounts: [] } });
+    expect(getAccountBreakdown({ accounts: [buildShare({ accountId: id('a'), sharePercent: 40 })], insights })).toEqual(
+      [
+        {
+          accountId: id('a'),
+          sharePercent: 40,
+          fixedAmount: null,
+          balance: null,
+          base: null,
+          afterFixed: false,
+          counted: null,
+          isShort: false,
+          percentOfSaved: null,
+        },
+      ],
+    );
+  });
+
   it('keeps shares but drops amounts without insights', () => {
-    expect(getAccountBreakdown({ accounts: [{ accountId: id('a'), sharePercent: 40 }], insights: null })).toEqual([
-      { accountId: id('a'), sharePercent: 40, balance: null, counted: null, percentOfSaved: null },
+    expect(
+      getAccountBreakdown({ accounts: [buildShare({ accountId: id('a'), sharePercent: 40 })], insights: null }),
+    ).toEqual([
+      {
+        accountId: id('a'),
+        sharePercent: 40,
+        fixedAmount: null,
+        balance: null,
+        base: null,
+        afterFixed: false,
+        counted: null,
+        isShort: false,
+        percentOfSaved: null,
+      },
     ]);
+  });
+});
+
+describe('getAccountRowCaption', () => {
+  const row = {
+    sharePercent: null,
+    fixedAmount: 500,
+    balance: 800,
+    base: 500,
+    afterFixed: false,
+    counted: 500,
+    isShort: false,
+  };
+
+  it('shows a fully funded fixed amount, and what it holds when short', () => {
+    expect(getAccountRowCaption({ row })).toEqual({ key: 'goals.details.accounts.fixed', isShort: false, amount: 500 });
+    expect(getAccountRowCaption({ row: { ...row, counted: 300, isShort: true } })).toEqual({
+      key: 'goals.details.accounts.fixedShort',
+      isShort: true,
+      counted: 300,
+      amount: 500,
+    });
+  });
+
+  it("applies a share to what other goals' fixed amounts leave", () => {
+    expect(
+      getAccountRowCaption({ row: { ...row, sharePercent: 50, fixedAmount: null, base: 300, afterFixed: true } }),
+    ).toEqual({ key: 'goals.details.accounts.shareOfLeft', isShort: false, share: 50, amount: 300 });
   });
 });
 

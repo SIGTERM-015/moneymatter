@@ -26,8 +26,11 @@ const inputSchema = {
   accounts: goalFieldsShape.accounts
     .optional()
     .describe(
-      "Replaces the whole set of backing accounts: { accountId, sharePercent }. Each account's shares across non-archived goals cannot exceed 100%",
+      "Replaces the whole set of backing accounts, each { accountId, sharePercent } or { accountId, fixedAmount, fixedPosition? } as in create_goal. Each account's sharePercent values across non-archived goals cannot exceed 100%",
     ),
+  reachedHoldDays: goalFieldsShape.reachedHoldDays.describe(
+    'Days (0-365, default 30) after first reaching the target during which a dip below it still counts as reached. 0 follows the balance live',
+  ),
 };
 
 export function registerUpdateGoal(server: McpServer) {
@@ -35,7 +38,7 @@ export function registerUpdateGoal(server: McpServer) {
     'update_goal',
     {
       description:
-        'Update a savings goal. Only passed fields change; accounts replaces the whole set. Use status to pause, archive or restore a goal. Fails when an account would pass 100% shared across non-archived goals or the new currency has no exchange rate. Needs the Goals feature on the plan or an active trial. Returns the goal in the get_goals shape.',
+        'Update a savings goal. Only passed fields change; accounts replaces the whole set. Use status to pause, archive or restore a goal. Fails when an account would pass 100% shared across non-archived goals, the new currency has no exchange rate, or fixed amounts alone fall short of the target. Needs the Goals feature on the plan or an active trial. Returns the goal in the get_goals shape.',
       inputSchema,
     },
     async ({ goalId, ...fields }, extra) => {

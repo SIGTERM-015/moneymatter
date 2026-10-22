@@ -123,6 +123,21 @@ describe('Goals reached check', () => {
     expect(await goalNotifications()).toHaveLength(2);
   });
 
+  it('uses the goal’s own hold window, and 0 reads and re-arms live', async () => {
+    const { accountId, goal } = await setupGoal({ balance: 1200 });
+    await checkGoalsReached();
+    await helpers.updateGoal({ goalId: goal.id, payload: { reachedHoldDays: 7 }, raw: true });
+    await addTransaction({ accountId, amount: 500, transactionType: TRANSACTION_TYPES.expense });
+
+    await backdateLatch({ goalId: goal.id, days: 6 });
+    await checkGoalsReached();
+    expect((await helpers.getGoal({ goalId: goal.id, raw: true })).achievedAt).not.toBeNull();
+
+    await helpers.updateGoal({ goalId: goal.id, payload: { reachedHoldDays: 0 }, raw: true });
+    await checkGoalsReached();
+    expect((await helpers.getGoal({ goalId: goal.id, raw: true })).achievedAt).toBeNull();
+  });
+
   it('keeps an old latch while the goal is still reached', async () => {
     const { goal } = await setupGoal({ balance: 1200 });
     await checkGoalsReached();

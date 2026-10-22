@@ -68,17 +68,18 @@ const targetDateValue = computed(() => (edits.value.targetDate ? parseISO(edits.
 const shareRows = computed(() =>
   insights.value.input.accounts.map((account) => {
     const capacity = shareCapacity({ accountId: account.accountId });
-    const share = Math.min(edits.value.shares[account.accountId] ?? 0, capacity?.max ?? FULL_SHARE);
-    const countedBase = accountGoalValue({
-      balance: account.currentBalance,
-      creditLimit: account.creditLimit,
-      sharePercent: share,
-    });
+    const isFixed = account.fixedAmount !== null;
+    const share = isFixed ? null : Math.min(edits.value.shares[account.accountId] ?? 0, capacity?.max ?? FULL_SHARE);
+    const countedBase = accountGoalValue({ ...account, balance: account.currentBalance, sharePercent: share });
     const counted = formatAmount(toGoalCurrency({ amount: countedBase, insights: insights.value }));
     let caption = t('goals.accountsDialog.counts', { amount: counted });
-    if (share === FULL_SHARE) caption = t('goals.whatIf.shares.whole', { amount: counted });
+    if (isFixed) caption = t('goals.whatIf.shares.fixed', { amount: counted });
+    else if (share === FULL_SHARE) caption = t('goals.whatIf.shares.whole', { amount: counted });
     else if (capacity) {
-      caption = t('goals.whatIf.shares.free', { free: Math.max(0, roundShare(capacity.max - share)), amount: counted });
+      caption = t('goals.whatIf.shares.free', {
+        free: Math.max(0, roundShare(capacity.max - (share ?? 0))),
+        amount: counted,
+      });
     }
     return {
       accountId: account.accountId,
@@ -86,6 +87,9 @@ const shareRows = computed(() =>
       name: accountName(account.accountId),
       balance: toGoalCurrency({ amount: account.currentBalance, insights: insights.value }),
       max: capacity?.max ?? null,
+      fixedLabel: isFixed
+        ? formatAmount(toGoalCurrency({ amount: account.fixedAmount!, insights: insights.value }))
+        : null,
       error:
         capacity && isOverMax({ accountId: account.accountId })
           ? t('goals.accountsDialog.errors.overMax', { max: capacity.max })
@@ -94,7 +98,7 @@ const shareRows = computed(() =>
     };
   }),
 );
-const isCapacityPending = computed(() => shareRows.value.some((row) => row.max === null));
+const isCapacityPending = computed(() => shareRows.value.some((row) => row.max === null && row.fixedLabel === null));
 
 const countedTotal = computed(() => {
   const progress = getGoalProgress({
@@ -242,7 +246,9 @@ const depositText = computed(() => {
                 <div class="truncate text-sm font-medium">{{ row.name }}</div>
                 <div class="text-muted-foreground text-xs">{{ formatAmount(row.balance) }}</div>
               </div>
+              <span v-if="row.fixedLabel !== null" class="text-right text-sm tabular-nums">{{ row.fixedLabel }}</span>
               <InputField
+                v-else
                 :model-value="edits.shares[row.accountId]"
                 type="number"
                 only-positive

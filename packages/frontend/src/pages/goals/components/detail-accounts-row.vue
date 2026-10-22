@@ -4,11 +4,12 @@ import ResponsiveHoverCard from '@/components/common/responsive-hover-card.vue';
 import Button from '@/components/lib/ui/button/Button.vue';
 import { useFormatCurrency } from '@/composable';
 import { cn } from '@/lib/utils';
-import { FULL_SHARE } from '@bt/shared/goals/goal-math';
 import type { GoalModel } from '@bt/shared/types';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 
-import { type DetailAccountRow, formatRowAmount } from './detail-helpers';
+import { formatGoalLinkLabel } from '../helpers';
+import { type DetailAccountRow, formatAccountRowCaption, formatRowAmount } from './detail-helpers';
 
 const MAX_VISIBLE_CHIPS = 3;
 
@@ -18,9 +19,21 @@ const props = defineProps<{
   progress: { saved: number; percent: number } | null;
 }>();
 
+const { t } = useI18n();
 const { formatWholeOrCompactAmount } = useFormatCurrency();
 
-const formatAmount = (amount: number) => formatWholeOrCompactAmount({ amount, currencyCode: props.goal.currencyCode });
+const formatAmount = ({ amount }: { amount: number }) =>
+  formatWholeOrCompactAmount({ amount, currencyCode: props.goal.currencyCode });
+
+const linkLabel = ({ row }: { row: DetailAccountRow }) =>
+  formatGoalLinkLabel({
+    share: row,
+    currencyCode: row.account?.currencyCode,
+    formatAmount: formatWholeOrCompactAmount,
+  });
+
+const rowCaption = ({ row }: { row: DetailAccountRow }) =>
+  formatAccountRowCaption({ row, t, formatAmount }) ?? { text: linkLabel({ row }), isShort: false };
 
 const visibleRows = computed(() => props.rows.slice(0, MAX_VISIBLE_CHIPS));
 const hiddenCount = computed(() => Math.max(0, props.rows.length - MAX_VISIBLE_CHIPS));
@@ -44,7 +57,7 @@ const hiddenCount = computed(() => Math.max(0, props.rows.length - MAX_VISIBLE_C
       <span :class="cn('truncate', !row.account && 'text-muted-foreground')">
         {{ row.account?.name ?? $t('goals.details.accounts.unavailableAccount') }}
       </span>
-      <span class="text-muted-foreground">{{ row.sharePercent }}%</span>
+      <span class="text-muted-foreground">{{ linkLabel({ row }) }}</span>
     </span>
 
     <ResponsiveHoverCard v-if="hiddenCount" side="bottom" align="start" content-class-name="w-80">
@@ -75,22 +88,25 @@ const hiddenCount = computed(() => Math.max(0, props.rows.length - MAX_VISIBLE_C
             <div :class="cn('truncate', !row.account && 'text-muted-foreground')">
               {{ row.account?.name ?? $t('goals.details.accounts.unavailableAccount') }}
             </div>
-            <div class="text-muted-foreground truncate text-xs">
-              {{
-                row.balance === null || row.sharePercent === FULL_SHARE
-                  ? `${row.sharePercent}%`
-                  : $t('goals.details.accounts.shareOf', {
-                      share: row.sharePercent,
-                      amount: formatAmount(row.balance),
-                    })
-              }}
+            <div
+              :class="
+                cn('text-xs', rowCaption({ row }).isShort ? 'text-warning-text' : 'text-muted-foreground truncate')
+              "
+            >
+              {{ rowCaption({ row }).text }}
             </div>
           </div>
           <span v-if="row.counted === null" class="text-muted-foreground text-xs whitespace-nowrap">
             {{ $t('goals.details.accounts.balanceUnavailable') }}
           </span>
           <span v-else class="font-semibold whitespace-nowrap tabular-nums">
-            {{ formatRowAmount({ row, formatted: formatAmount(row.counted), currencyCode: goal.currencyCode }) }}
+            {{
+              formatRowAmount({
+                row,
+                formatted: formatAmount({ amount: row.counted }),
+                currencyCode: goal.currencyCode,
+              })
+            }}
           </span>
         </div>
         <div
@@ -99,7 +115,7 @@ const hiddenCount = computed(() => Math.max(0, props.rows.length - MAX_VISIBLE_C
         >
           <span>{{ $t('goals.details.accounts.totalCounted') }}</span>
           <span>
-            {{ formatAmount(progress.saved) }}
+            {{ formatAmount({ amount: progress.saved }) }}
             <span class="text-muted-foreground ml-1 font-medium">{{ progress.percent }}%</span>
           </span>
         </div>

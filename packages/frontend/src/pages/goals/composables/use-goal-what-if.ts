@@ -23,25 +23,29 @@ export interface GoalWhatIfEdits {
   monthly: number | null;
   /** 'yyyy-MM-dd'. */
   targetDate: string | null;
-  /** Empty input is null and counts as 0. */
+  /** Percent links only; fixed amounts aren't edited here. Empty input is null and counts as 0. */
   shares: Record<RecordId, number | null>;
 }
 
-export type GoalWhatIfApplyValues = Required<Pick<UpdateGoalPayload, 'plannedMonthly' | 'targetDate' | 'accounts'>>;
+export type GoalWhatIfApplyValues = Required<Pick<UpdateGoalPayload, 'plannedMonthly' | 'targetDate'>> & {
+  accounts: GoalAccountShare[];
+};
 
 export type GoalWithInsights = GoalModel & { insights: GoalInsights };
 
-/** The accounts with their edited share; a share of 0 or empty drops the account. */
-export const editedShares = <T extends { accountId: RecordId }>({
+/** The accounts with their edited share; a share of 0 or empty drops the account. Fixed amounts stay as they are. */
+export const editedShares = <T extends Pick<GoalAccountShare, 'accountId' | 'fixedAmount'>>({
   accounts,
   shares,
 }: {
   accounts: T[];
   shares: GoalWhatIfEdits['shares'];
-}) =>
-  accounts
-    .map((account) => ({ ...account, sharePercent: shares[account.accountId] ?? 0 }))
-    .filter((account) => account.sharePercent > 0);
+}): T[] =>
+  accounts.flatMap((account) => {
+    if (account.fixedAmount !== null) return [account];
+    const sharePercent = shares[account.accountId] ?? 0;
+    return sharePercent > 0 ? [{ ...account, sharePercent }] : [];
+  });
 
 /** The server's math input with the sandbox edits applied. */
 export const buildWhatIfInput = ({
@@ -67,7 +71,10 @@ export const buildWhatIfInput = ({
   };
 };
 
-/** A monthly amount counted toward the goal through a 25% share needs 4× that deposited into the account. */
+/**
+ * A monthly amount counted toward the goal through a 25% share needs 4× that deposited into the
+ * account; through a fixed amount, the same amount.
+ */
 export const getImpliedDeposits = ({
   monthly,
   accounts,
@@ -75,9 +82,10 @@ export const getImpliedDeposits = ({
   monthly: number;
   accounts: GoalAccountShare[];
 }): { accountId: RecordId; deposit: number }[] =>
-  accounts
-    .filter(({ sharePercent }) => sharePercent > 0)
-    .map(({ accountId, sharePercent }) => ({ accountId, deposit: (monthly * FULL_SHARE) / sharePercent }));
+  accounts.flatMap(({ accountId, sharePercent, fixedAmount }) => {
+    if (fixedAmount !== null) return [{ accountId, deposit: monthly }];
+    return sharePercent ? [{ accountId, deposit: (monthly * FULL_SHARE) / sharePercent }] : [];
+  });
 
 export const clampShare = ({ value, max }: { value: number | null; max: number }): number | null =>
   value === null ? null : Math.min(max, Math.max(0, roundShare(value)));
@@ -100,7 +108,9 @@ export const getMonthlySliderRange = ({
 const toEdits = ({ goal }: { goal: GoalModel }): GoalWhatIfEdits => ({
   monthly: goal.plannedMonthly,
   targetDate: goal.targetDate,
-  shares: Object.fromEntries(goal.accounts.map(({ accountId, sharePercent }) => [accountId, sharePercent])),
+  shares: Object.fromEntries(
+    goal.accounts.flatMap(({ accountId, sharePercent }) => (sharePercent === null ? [] : [[accountId, sharePercent]])),
+  ),
 });
 
 export const useGoalWhatIf = ({ goal }: { goal: MaybeRefOrGetter<GoalWithInsights> }) => {

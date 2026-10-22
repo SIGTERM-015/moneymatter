@@ -22,9 +22,13 @@ export async function transformGoals({ userId }: { userId: number }): Promise<Go
 
   // `userId` guard: a stray cross-user accountId in the link table must not leak another user's account name.
   const accounts = accountIds.length
-    ? await Accounts.findAll({ where: { userId, id: { [Op.in]: accountIds } }, attributes: ['id', 'name'] })
+    ? await Accounts.findAll({
+        where: { userId, id: { [Op.in]: accountIds } },
+        attributes: ['id', 'name', 'currencyCode'],
+      })
     : [];
   const accountNameById = new Map(accounts.map((a) => [String(a.id), a.name]));
+  const accountCurrencyById = new Map(accounts.map((a) => [String(a.id), a.currencyCode]));
 
   const sharesByGoalId = new Map<string, string[]>();
   for (const link of links) {
@@ -35,7 +39,11 @@ export async function transformGoals({ userId }: { userId: number }): Promise<Go
       context: `goal ${link.goalId}`,
     });
     const list = sharesByGoalId.get(link.goalId) ?? [];
-    list.push(`${name}: ${link.sharePercent}%`);
+    list.push(
+      link.fixedAmount === null
+        ? `${name}: ${link.sharePercent}%`
+        : `${name}: ${link.fixedAmount.toNumber()} ${accountCurrencyById.get(String(link.accountId)) ?? ''} fixed`,
+    );
     sharesByGoalId.set(link.goalId, list);
   }
 

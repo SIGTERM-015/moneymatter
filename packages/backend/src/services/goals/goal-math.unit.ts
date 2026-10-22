@@ -6,6 +6,7 @@ import {
   etaMonths,
   goalDisplayStatus,
   goalMonthlyDemand,
+  isWithinReachedHold,
   median,
   neededMonthly,
   roundShare,
@@ -39,12 +40,18 @@ const account = ({
   monthEndBalances,
   currentBalance = monthEndBalances[monthEndBalances.length - 1]!,
   sharePercent = 100,
+  fixedAmount = null,
+  fixedAhead = 0,
+  fixedOthers = 0,
   creditLimit = 0,
   firstDataDate = '2025-01-01',
   accountId = id('a'),
 }: Partial<GoalAccountHistory> & { monthEndBalances: number[] }): GoalAccountHistory => ({
   accountId,
-  sharePercent,
+  sharePercent: fixedAmount === null ? sharePercent : null,
+  fixedAmount,
+  fixedAhead,
+  fixedOthers,
   currentBalance,
   creditLimit,
   firstDataDate,
@@ -259,11 +266,34 @@ describe('toGoalCurrency', () => {
   });
 });
 
+const accountValue = (params: Partial<Parameters<typeof accountGoalValue>[0]> & { balance: number }) =>
+  accountGoalValue({
+    creditLimit: 0,
+    sharePercent: null,
+    fixedAmount: null,
+    fixedAhead: 0,
+    fixedOthers: 0,
+    ...params,
+  });
+
 describe('accountGoalValue', () => {
   it('applies the share to the balance above the credit limit, never below 0', () => {
-    expect(accountGoalValue({ balance: 1500, creditLimit: 1000, sharePercent: 50 })).toBe(250);
-    expect(accountGoalValue({ balance: 500, creditLimit: 1000, sharePercent: 50 })).toBe(0);
-    expect(accountGoalValue({ balance: 0.1, creditLimit: 0, sharePercent: 33.33 })).toBe(0.03);
+    expect(accountValue({ balance: 1500, creditLimit: 1000, sharePercent: 50 })).toBe(250);
+    expect(accountValue({ balance: 500, creditLimit: 1000, sharePercent: 50 })).toBe(0);
+    expect(accountValue({ balance: 0.1, sharePercent: 33.33 })).toBe(0.03);
+  });
+
+  it('gives a fixed amount what the fixed amounts ahead of it leave, up to itself', () => {
+    expect(accountValue({ balance: 150_000, fixedAmount: 100_000 })).toBe(100_000);
+    expect(accountValue({ balance: 60_000, fixedAmount: 100_000 })).toBe(60_000);
+    expect(accountValue({ balance: 120_000, fixedAmount: 50_000, fixedAhead: 100_000 })).toBe(20_000);
+    expect(accountValue({ balance: 90_000, fixedAmount: 50_000, fixedAhead: 100_000 })).toBe(0);
+    expect(accountValue({ balance: 1500, creditLimit: 1000, fixedAmount: 400 })).toBe(400);
+  });
+
+  it('splits only what all fixed amounts leave between the shares', () => {
+    expect(accountValue({ balance: 150_000, sharePercent: 50, fixedOthers: 100_000 })).toBe(25_000);
+    expect(accountValue({ balance: 120_000, sharePercent: 10, fixedOthers: 150_000 })).toBe(0);
   });
 });
 
@@ -290,29 +320,54 @@ describe('etaDate', () => {
 describe('goalDisplayStatus', () => {
   const insights = { status: 'behind' as const };
 
+  const now = new Date('2026-10-20T12:00:00Z');
+  const display = (params: Omit<Parameters<typeof goalDisplayStatus>[0], 'reachedHoldDays' | 'now'>) =>
+    goalDisplayStatus({ reachedHoldDays: 30, now, ...params });
+
   it('ranks archived, the latch, a missing rate and pause over the progress status', () => {
-    expect(goalDisplayStatus({ status: 'archived', achievedAt: '2026-10-01', insights })).toBe('archived');
-    expect(goalDisplayStatus({ status: 'active', achievedAt: '2026-10-01', insights })).toBe('reached');
-    expect(goalDisplayStatus({ status: 'active', achievedAt: null, insights: null })).toBe('no_rate');
-    expect(goalDisplayStatus({ status: 'paused', achievedAt: null, insights: { status: 'reached' } })).toBe('reached');
-    expect(goalDisplayStatus({ status: 'paused', achievedAt: null, insights })).toBe('paused');
-    expect(goalDisplayStatus({ status: 'active', achievedAt: null, insights })).toBe('behind');
+    expect(display({ status: 'archived', achievedAt: '2026-10-01', insights })).toBe('archived');
+    expect(display({ status: 'active', achievedAt: '2026-10-01', insights })).toBe('reached');
+    expect(display({ status: 'active', achievedAt: null, insights: null })).toBe('no_rate');
+    expect(display({ status: 'paused', achievedAt: null, insights: { status: 'reached' } })).toBe('reached');
+    expect(display({ status: 'paused', achievedAt: null, insights })).toBe('paused');
+    expect(display({ status: 'active', achievedAt: null, insights })).toBe('behind');
+  });
+
+  it('keeps a dipped goal reached only within its hold window', () => {
+    const achievedAt = '2026-10-10T12:00:00Z';
+    expect(goalDisplayStatus({ status: 'active', achievedAt, reachedHoldDays: 30, insights, now })).toBe('reached');
+    expect(goalDisplayStatus({ status: 'active', achievedAt, reachedHoldDays: 7, insights, now })).toBe('behind');
+    expect(goalDisplayStatus({ status: 'active', achievedAt, reachedHoldDays: 0, insights, now })).toBe('behind');
+    expect(
+      goalDisplayStatus({ status: 'active', achievedAt, reachedHoldDays: 0, insights: { status: 'reached' }, now }),
+    ).toBe('reached');
+  });
+});
+
+const demand = ({ daysLeft }: { daysLeft: number | null }) =>
+  goalMonthlyDemand({ daysLeft, neededMonthly: 300, input: { plannedMonthly: 500 } });
+
+describe('isWithinReachedHold', () => {
+  it('ends the hold exactly reachedHoldDays after achievedAt', () => {
+    const achievedAt = '2026-10-10T12:00:00.000Z';
+    const at = (iso: string) => isWithinReachedHold({ achievedAt, reachedHoldDays: 10, now: new Date(iso) });
+
+    expect(at('2026-10-20T11:59:59.999Z')).toBe(true);
+    expect(at('2026-10-20T12:00:00.000Z')).toBe(false);
+    expect(isWithinReachedHold({ achievedAt, reachedHoldDays: 0, now: new Date(achievedAt) })).toBe(false);
   });
 });
 
 describe('goalMonthlyDemand', () => {
-  const demand = (daysLeft: number | null) =>
-    goalMonthlyDemand({ daysLeft, neededMonthly: 300, input: { plannedMonthly: 500 } });
-
   it('takes the larger of the need and the plan', () => {
-    expect(demand(null)).toBe(500);
-    expect(demand(90)).toBe(500);
+    expect(demand({ daysLeft: null })).toBe(500);
+    expect(demand({ daysLeft: 90 })).toBe(500);
     expect(goalMonthlyDemand({ daysLeft: 90, neededMonthly: 700, input: { plannedMonthly: null } })).toBe(700);
   });
 
   it('is null when the date is under a month away or past', () => {
-    expect(demand(20)).toBeNull();
-    expect(demand(-5)).toBeNull();
+    expect(demand({ daysLeft: 20 })).toBeNull();
+    expect(demand({ daysLeft: -5 })).toBeNull();
   });
 });
 

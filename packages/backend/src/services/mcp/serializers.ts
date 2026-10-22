@@ -182,11 +182,14 @@ export function slimGoalsForMcp({ goals, accountNames }: { goals: GoalModel[]; a
     plannedMonthly: goal.plannedMonthly,
     achievedAt: goal.achievedAt,
     achievedAmount: goal.achievedAmount,
+    reachedHoldDays: goal.reachedHoldDays,
     progress: goal.insights ? goalProgressForMcp({ goal, insights: goal.insights }) : null,
-    accounts: goal.accounts.map(({ accountId, sharePercent }) => ({
+    accounts: goal.accounts.map(({ accountId, sharePercent, fixedAmount, fixedPosition }) => ({
       accountId,
       accountName: accountNames.get(accountId) ?? null,
       sharePercent,
+      fixedAmount,
+      fixedPosition,
     })),
   }));
 }

@@ -46,15 +46,28 @@ export const median = ({ values }: { values: number[] }): number | null => {
 const daysBetween = ({ from, to }: { from: string; to: string }): number =>
   Math.round((Date.parse(to) - Date.parse(from)) / MS_PER_DAY);
 
-interface AccountValueParams {
+type AccountValueParams = Pick<GoalAccountHistory, 'sharePercent' | 'fixedAmount' | 'fixedAhead' | 'fixedOthers'> & {
   balance: number;
   creditLimit: number;
-  sharePercent: number;
-}
+};
 
-/** share × max(0, balance − credit limit): a negative balance never reduces progress. Unrounded cents. */
-const accountValueCents = ({ balance, creditLimit, sharePercent }: AccountValueParams): number =>
-  (Math.max(0, toCents(balance) - toCents(creditLimit)) * sharePercent) / FULL_SHARE;
+/**
+ * Of the balance above the credit limit, a fixed amount takes what the fixed amounts ahead of it
+ * leave, up to itself; a share takes its percent of what all fixed amounts leave. A negative
+ * balance never reduces progress. Unrounded cents.
+ */
+const accountValueCents = ({
+  balance,
+  creditLimit,
+  sharePercent,
+  fixedAmount,
+  fixedAhead,
+  fixedOthers,
+}: AccountValueParams): number => {
+  const available = Math.max(0, toCents(balance) - toCents(creditLimit));
+  if (fixedAmount !== null) return Math.min(toCents(fixedAmount), Math.max(0, available - toCents(fixedAhead)));
+  return (Math.max(0, available - toCents(fixedOthers)) * (sharePercent ?? 0)) / FULL_SHARE;
+};
 
 export const accountGoalValue = (params: AccountValueParams): number => fromCents(accountValueCents(params));
 
@@ -66,16 +79,7 @@ const goalValueCents = ({
   balanceOf: (account: GoalAccountHistory) => number;
 }): number =>
   Math.round(
-    accounts.reduce(
-      (sum, account) =>
-        sum +
-        accountValueCents({
-          balance: balanceOf(account),
-          creditLimit: account.creditLimit,
-          sharePercent: account.sharePercent,
-        }),
-      0,
-    ),
+    accounts.reduce((sum, account) => sum + accountValueCents({ ...account, balance: balanceOf(account) }), 0),
   );
 
 export const currentGoalValue = ({ accounts }: { accounts: GoalAccountHistory[] }): number =>
@@ -200,14 +204,29 @@ const progressStatus = ({
   return STATUS_BY_OFFSET[scheduleOffset({ etaMonths: eta, daysLeft }).kind];
 };
 
-/** A set `achievedAt` reads as reached, so a latched goal that dipped below target still shows reached. */
+/** Within `reachedHoldDays` of `achievedAt` a goal that dipped below target still reads as reached. */
+export const isWithinReachedHold = ({
+  achievedAt,
+  reachedHoldDays,
+  now,
+}: {
+  achievedAt: string;
+  reachedHoldDays: number;
+  now: Date;
+}): boolean => Date.parse(achievedAt) + reachedHoldDays * MS_PER_DAY > now.getTime();
+
 export const goalDisplayStatus = ({
   status,
   achievedAt,
+  reachedHoldDays,
   insights,
-}: Pick<GoalModel, 'status' | 'achievedAt'> & { insights: Pick<GoalInsights, 'status'> | null }): GoalDisplayStatus => {
+  now = new Date(),
+}: Pick<GoalModel, 'status' | 'achievedAt' | 'reachedHoldDays'> & {
+  insights: Pick<GoalInsights, 'status'> | null;
+  now?: Date;
+}): GoalDisplayStatus => {
   if (status === 'archived') return 'archived';
-  if (achievedAt) return 'reached';
+  if (achievedAt && isWithinReachedHold({ achievedAt, reachedHoldDays, now })) return 'reached';
   if (!insights) return 'no_rate';
   if (insights.status === 'reached') return 'reached';
   if (status === 'paused') return 'paused';

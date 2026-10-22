@@ -1,6 +1,6 @@
 import { useGoals } from '@/composable/data-queries/goals';
 import { computeGoalProgress } from '@bt/shared/goals/goal-math';
-import type { GoalMathInput, GoalModel, RecordId } from '@bt/shared/types';
+import type { GoalAccountShare, GoalMathInput, GoalModel, RecordId } from '@bt/shared/types';
 import { describe, expect, it, vi } from 'vitest';
 import { nextTick, ref, shallowRef } from 'vue';
 
@@ -9,6 +9,7 @@ import {
   type GoalWithInsights,
   buildWhatIfInput,
   clampShare,
+  editedShares,
   getImpliedDeposits,
   getMonthlySliderRange,
   useGoalWhatIf,
@@ -17,6 +18,13 @@ import {
 vi.mock('@/composable/data-queries/goals', () => ({ useGoals: vi.fn() }));
 
 const id = (value: string) => value as RecordId;
+
+const buildShare = (share: Partial<GoalAccountShare> & Pick<GoalAccountShare, 'accountId'>): GoalAccountShare => ({
+  sharePercent: null,
+  fixedAmount: null,
+  fixedPosition: null,
+  ...share,
+});
 
 const input: GoalMathInput = {
   today: '2026-10-20',
@@ -34,6 +42,9 @@ const input: GoalMathInput = {
     {
       accountId: id('a'),
       sharePercent: 100,
+      fixedAmount: null,
+      fixedAhead: 0,
+      fixedOthers: 0,
       currentBalance: 650,
       creditLimit: 0,
       firstDataDate: '2026-01-01',
@@ -42,6 +53,9 @@ const input: GoalMathInput = {
     {
       accountId: id('b'),
       sharePercent: 50,
+      fixedAmount: null,
+      fixedAhead: 0,
+      fixedOthers: 0,
       currentBalance: 1000,
       creditLimit: 0,
       firstDataDate: '2026-01-01',
@@ -114,15 +128,37 @@ describe('getImpliedDeposits', () => {
       getImpliedDeposits({
         monthly: 2200,
         accounts: [
-          { accountId: id('a'), sharePercent: 100 },
-          { accountId: id('b'), sharePercent: 25 },
-          { accountId: id('c'), sharePercent: 0 },
+          buildShare({ accountId: id('a'), sharePercent: 100 }),
+          buildShare({ accountId: id('b'), sharePercent: 25 }),
+          buildShare({ accountId: id('c'), sharePercent: 0 }),
         ],
       }),
     ).toEqual([
       { accountId: id('a'), deposit: 2200 },
       { accountId: id('b'), deposit: 8800 },
     ]);
+  });
+
+  it('asks a fixed link for the monthly amount itself', () => {
+    expect(
+      getImpliedDeposits({
+        monthly: 300,
+        accounts: [buildShare({ accountId: id('a'), fixedAmount: 1000, fixedPosition: 0 })],
+      }),
+    ).toEqual([{ accountId: id('a'), deposit: 300 }]);
+  });
+});
+
+describe('editedShares', () => {
+  it('keeps fixed links as they are and applies edits to percent links only', () => {
+    const fixed = buildShare({ accountId: id('f'), fixedAmount: 500, fixedPosition: 0 });
+    const accounts = [fixed, buildShare({ accountId: id('a'), sharePercent: 60 })];
+
+    expect(editedShares({ accounts, shares: { [id('a')]: 40 } })).toEqual([
+      fixed,
+      buildShare({ accountId: id('a'), sharePercent: 40 }),
+    ]);
+    expect(editedShares({ accounts, shares: { [id('a')]: 0 } })).toEqual([fixed]);
   });
 });
 
@@ -145,10 +181,11 @@ const buildGoal = (overrides: Partial<GoalWithInsights> = {}): GoalWithInsights 
   status: 'active',
   achievedAt: null,
   achievedAmount: null,
+  reachedHoldDays: 30,
   sortOrder: 0,
   accounts: [
-    { accountId: id('a'), sharePercent: 60 },
-    { accountId: id('b'), sharePercent: 50 },
+    buildShare({ accountId: id('a'), sharePercent: 60 }),
+    buildShare({ accountId: id('b'), sharePercent: 50 }),
   ],
   insights: { ...computeGoalProgress(input), input, rateToBase: 1, baseCurrencyCode: 'UAH' },
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -186,7 +223,7 @@ describe('useGoalWhatIf', () => {
     setShare({ accountId: id('b'), value: null });
     expect(applyValues.value.accounts).toEqual([]);
     setShare({ accountId: id('b'), value: 25 });
-    expect(applyValues.value.accounts).toEqual([{ accountId: id('b'), sharePercent: 25 }]);
+    expect(applyValues.value.accounts).toEqual([buildShare({ accountId: id('b'), sharePercent: 25 })]);
   });
 
   it('is not dirty after a reset', () => {
@@ -213,14 +250,18 @@ describe('useGoalWhatIf', () => {
 
   it("caps a share by other goals' holdings, not the goal's own", () => {
     const goal = buildGoal();
-    const other = buildGoal({ id: id('other'), name: 'Trip', accounts: [{ accountId: id('a'), sharePercent: 30 }] });
+    const other = buildGoal({
+      id: id('other'),
+      name: 'Trip',
+      accounts: [buildShare({ accountId: id('a'), sharePercent: 30 })],
+    });
     const { shareCapacity, setShare, isOverMax, hasShareError, applyValues } = setup({ goal, goals: [goal, other] });
     expect(shareCapacity({ accountId: id('a') })?.max).toBe(70);
 
     setShare({ accountId: id('a'), value: 80 });
     expect(isOverMax({ accountId: id('a') })).toBe(true);
     expect(hasShareError.value).toBe(true);
-    expect(applyValues.value.accounts).toContainEqual({ accountId: id('a'), sharePercent: 70 });
+    expect(applyValues.value.accounts).toContainEqual(buildShare({ accountId: id('a'), sharePercent: 70 }));
 
     setShare({ accountId: id('a'), value: 70 });
     expect(hasShareError.value).toBe(false);

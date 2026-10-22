@@ -3,6 +3,7 @@ import {
   API_ERROR_CODES,
   type CreateGoalPayload,
   FEATURES,
+  type GoalModel,
   PLANS,
   type RecordId,
   type UpdateGoalPayload,
@@ -18,6 +19,13 @@ const createAccountOf = async ({ accountCategory }: { accountCategory: ACCOUNT_C
     payload: helpers.buildAccountPayload({ accountCategory, name: accountCategory }),
     raw: true,
   });
+
+const percentShare = ({ accountId, sharePercent }: { accountId: RecordId; sharePercent: number }) => ({
+  accountId,
+  sharePercent,
+  fixedAmount: null,
+  fixedPosition: null,
+});
 
 const expectCapacityError = ({
   response,
@@ -79,8 +87,8 @@ describe('Goals CRUD', () => {
     });
     expect(goal.accounts.toSorted((a, b) => a.accountId.localeCompare(b.accountId))).toEqual(
       [
-        { accountId: savings.id, sharePercent: 100 },
-        { accountId: cash.id, sharePercent: 25.5 },
+        percentShare({ accountId: savings.id, sharePercent: 100 }),
+        percentShare({ accountId: cash.id, sharePercent: 25.5 }),
       ].toSorted((a, b) => a.accountId.localeCompare(b.accountId)),
     );
 
@@ -241,7 +249,7 @@ describe('Goal account eligibility', () => {
       raw: true,
     });
 
-    expect(goal.accounts).toEqual([{ accountId: account.id, sharePercent: 100 }]);
+    expect(goal.accounts).toEqual([percentShare({ accountId: account.id, sharePercent: 100 })]);
   });
 
   it('drops the link when a deleted account cascades away', async () => {
@@ -260,7 +268,7 @@ describe('Goal account eligibility', () => {
     expect((await helpers.deleteAccount({ id: deleted.id, raw: false })).statusCode).toBe(200);
 
     expect((await helpers.getGoal({ goalId: goal.id, raw: true })).accounts).toEqual([
-      { accountId: kept.id, sharePercent: 50 },
+      percentShare({ accountId: kept.id, sharePercent: 50 }),
     ]);
   });
 
@@ -381,7 +389,7 @@ describe('Goal share capacity', () => {
       raw: true,
     });
 
-    expect(updated.accounts).toEqual([{ accountId: account.id, sharePercent: 100 }]);
+    expect(updated.accounts).toEqual([percentShare({ accountId: account.id, sharePercent: 100 })]);
   });
 
   it('counts paused goals, releases the share on archive and re-checks on unarchive', async () => {
@@ -512,5 +520,201 @@ describe('Goals without the feature', () => {
     await helpers.setUserBilling({ plan: PLANS.essential });
 
     expect((await helpers.createGoal()).statusCode).toBe(201);
+  });
+});
+
+const fixedPositions = async ({ accountId }: { accountId: RecordId }) =>
+  Object.fromEntries(
+    (await helpers.listGoals({ raw: true })).flatMap((goal) =>
+      goal.accounts
+        .filter((share) => share.accountId === accountId && share.fixedAmount !== null)
+        .map((share) => [goal.name, share.fixedPosition]),
+    ),
+  );
+
+const createFixedGoal = ({
+  accountId,
+  name,
+  fixedPosition,
+}: {
+  accountId: RecordId;
+  name: string;
+  fixedPosition?: number;
+}) =>
+  helpers.createGoal({
+    payload: { name, targetAmount: 100, accounts: [{ accountId, fixedAmount: 100, fixedPosition }] },
+    raw: true,
+  });
+
+const expectBelowTarget = (response: Awaited<ReturnType<typeof helpers.createGoal<false>>>) => {
+  expect(response.statusCode).toBe(ERROR_CODES.ValidationError);
+  expect((response.body.response as unknown as ErrorResponse).code).toBe(API_ERROR_CODES.goalFixedAmountsBelowTarget);
+};
+
+describe('Goal fixed amounts', () => {
+  it('stores a fixed amount next to a share and returns both shapes', async () => {
+    const savings = await createAccountOf({ accountCategory: ACCOUNT_CATEGORIES.saving });
+    const cash = await createAccountOf({ accountCategory: ACCOUNT_CATEGORIES.cash });
+
+    const goal = await helpers.createGoal({
+      payload: {
+        targetAmount: 1000,
+        reachedHoldDays: 0,
+        accounts: [
+          { accountId: savings.id, fixedAmount: 300.5 },
+          { accountId: cash.id, sharePercent: 50 },
+        ],
+      },
+      raw: true,
+    });
+
+    expect(goal.reachedHoldDays).toBe(0);
+    expect(goal.accounts.toSorted((a, b) => a.accountId.localeCompare(b.accountId))).toEqual(
+      [
+        { accountId: savings.id, sharePercent: null, fixedAmount: 300.5, fixedPosition: 0 },
+        { accountId: cash.id, sharePercent: 50, fixedAmount: null, fixedPosition: null },
+      ].toSorted((a, b) => a.accountId.localeCompare(b.accountId)),
+    );
+    expect((await helpers.createGoal({ raw: true })).reachedHoldDays).toBe(30);
+  });
+
+  it('rejects a link with both or neither kind, a non-positive amount and an out-of-range hold window', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const invalid: Partial<CreateGoalPayload>[] = [
+      { accounts: [{ accountId: account.id, sharePercent: 50, fixedAmount: 100 }] },
+      { accounts: [{ accountId: account.id }] },
+      { accounts: [{ accountId: account.id, fixedAmount: 0 }] },
+      { accounts: [{ accountId: account.id, sharePercent: 50, fixedPosition: 0 }] },
+      { reachedHoldDays: -1 },
+      { reachedHoldDays: 366 },
+    ];
+
+    for (const payload of invalid) {
+      expect((await helpers.createGoal({ payload })).statusCode).toBe(ERROR_CODES.ValidationError);
+    }
+    expect(await helpers.listGoals({ raw: true })).toEqual([]);
+  });
+
+  it('takes a fixed amount from an account whose shares are fully used', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    await helpers.createGoal({ payload: { accounts: [{ accountId: account.id, sharePercent: 100 }] }, raw: true });
+
+    const fixed = await helpers.createGoal({
+      payload: { targetAmount: 500, accounts: [{ accountId: account.id, fixedAmount: 500 }] },
+    });
+    expect(fixed.statusCode).toBe(201);
+
+    const share = await helpers.createGoal({ payload: { accounts: [{ accountId: account.id, sharePercent: 1 }] } });
+    expect(share.statusCode).toBe(ERROR_CODES.ConflictError);
+  });
+
+  it('refuses fixed amounts alone below the target, on create and when the target grows', async () => {
+    const savings = await helpers.createAccount({ raw: true });
+    const cash = await helpers.createAccount({ raw: true });
+
+    expectBelowTarget(
+      await helpers.createGoal({
+        payload: { targetAmount: 1000, accounts: [{ accountId: savings.id, fixedAmount: 600 }] },
+      }),
+    );
+
+    const goal = await helpers.createGoal({
+      payload: {
+        targetAmount: 1000,
+        accounts: [
+          { accountId: savings.id, fixedAmount: 600 },
+          { accountId: cash.id, fixedAmount: 400 },
+        ],
+      },
+      raw: true,
+    });
+    expectBelowTarget(await helpers.updateGoal({ goalId: goal.id, payload: { targetAmount: 1500 } }));
+    expect((await helpers.getGoal({ goalId: goal.id, raw: true })).targetAmount).toBe(1000);
+
+    const withShare = await helpers.updateGoal({
+      goalId: goal.id,
+      payload: {
+        targetAmount: 1500,
+        accounts: [
+          { accountId: savings.id, fixedAmount: 600 },
+          { accountId: cash.id, sharePercent: 10 },
+        ],
+      },
+    });
+    expect(withShare.statusCode).toBe(200);
+  });
+
+  it('orders an account’s fixed amounts: appends, inserts at fixedPosition, keeps the place on edit', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const emergency = await createFixedGoal({ accountId: account.id, name: 'Emergency' });
+    await createFixedGoal({ accountId: account.id, name: 'Laptop' });
+    const car = await createFixedGoal({ accountId: account.id, name: 'Car', fixedPosition: 0 });
+    expect(await fixedPositions({ accountId: account.id })).toEqual({ Car: 0, Emergency: 1, Laptop: 2 });
+
+    await helpers.updateGoal({
+      goalId: emergency.id,
+      payload: { accounts: [{ accountId: account.id, fixedAmount: 150 }] },
+      raw: true,
+    });
+    expect(await fixedPositions({ accountId: account.id })).toEqual({ Car: 0, Emergency: 1, Laptop: 2 });
+
+    await helpers.updateGoal({
+      goalId: emergency.id,
+      payload: { accounts: [{ accountId: account.id, fixedAmount: 150, fixedPosition: 0 }] },
+      raw: true,
+    });
+    expect(await fixedPositions({ accountId: account.id })).toEqual({ Emergency: 0, Car: 1, Laptop: 2 });
+
+    await helpers.updateGoal({ goalId: emergency.id, payload: { status: 'archived' }, raw: true });
+    await helpers.updateGoal({ goalId: emergency.id, payload: { status: 'active' }, raw: true });
+    expect(await fixedPositions({ accountId: account.id })).toEqual({ Car: 0, Laptop: 1, Emergency: 2 });
+
+    expect(car.accounts[0]!.fixedPosition).toBe(0);
+  });
+
+  it('returns dense positions that keep the order when a write echoes them back', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const goals: GoalModel[] = [];
+    for (const name of ['A', 'B', 'C', 'D']) goals.push(await createFixedGoal({ accountId: account.id, name }));
+    const [, b, c] = goals;
+
+    await helpers.deleteGoal({ goalId: b!.id, raw: true });
+    const { accounts } = await helpers.getGoal({ goalId: c!.id, raw: true });
+    expect(accounts[0]!.fixedPosition).toBe(1);
+
+    await helpers.updateGoal({ goalId: c!.id, payload: { name: 'C2', accounts }, raw: true });
+    expect(await fixedPositions({ accountId: account.id })).toEqual({ A: 0, C2: 1, D: 2 });
+  });
+
+  it('moves a fixed amount to a later slot and renumbers the others', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    const goals: GoalModel[] = [];
+    for (const name of ['A', 'B', 'C', 'D']) goals.push(await createFixedGoal({ accountId: account.id, name }));
+
+    await helpers.updateGoal({
+      goalId: goals[0]!.id,
+      payload: { accounts: [{ accountId: account.id, fixedAmount: 100, fixedPosition: 2 }] },
+      raw: true,
+    });
+    expect(await fixedPositions({ accountId: account.id })).toEqual({ B: 0, C: 1, A: 2, D: 3 });
+  });
+
+  it('checks fixed amounts in another currency against the target after converting both to base', async () => {
+    await helpers.addUserCurrencies({ currencyCodes: ['USD'] });
+    const account = await helpers.createAccount({
+      payload: helpers.buildAccountPayload({ currencyCode: 'USD' }),
+      raw: true,
+    });
+    const accounts = [{ accountId: account.id, fixedAmount: 1000 }];
+
+    const goal = await helpers.createGoal({ payload: { targetAmount: 1, accounts }, raw: true });
+    const converted = goal.insights!.input.accounts[0]!.fixedAmount!;
+    const aboveConverted = Math.round(converted * 100 + 1) / 100;
+    expect(goal.currencyCode).not.toBe('USD');
+
+    expectBelowTarget(await helpers.createGoal({ payload: { targetAmount: aboveConverted, accounts } }));
+    expect((await helpers.updateGoal({ goalId: goal.id, payload: { targetAmount: converted } })).statusCode).toBe(200);
+    expectBelowTarget(await helpers.updateGoal({ goalId: goal.id, payload: { targetAmount: aboveConverted } }));
+    expect((await helpers.getGoal({ goalId: goal.id, raw: true })).targetAmount).toBe(converted);
   });
 });

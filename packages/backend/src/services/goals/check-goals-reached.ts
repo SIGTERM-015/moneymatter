@@ -1,4 +1,4 @@
-import { toGoalCurrency } from '@bt/shared/goals/goal-math';
+import { isWithinReachedHold, toGoalCurrency } from '@bt/shared/goals/goal-math';
 import {
   type GoalModel,
   type GoalReachedNotificationPayload,
@@ -11,13 +11,9 @@ import { logger } from '@js/utils/logger';
 import Goals from '@models/goals.model';
 import { withTransaction } from '@services/common/with-transaction';
 import * as notificationsService from '@services/notifications';
-import { subDays } from 'date-fns';
 import { Op } from 'sequelize';
 
 import { getGoal, loadGoalsWithInsights, throwGoalNotFound } from './get-goals';
-
-/** A latch younger than this survives the goal dipping below target, so an oscillating balance can't re-notify. */
-const REARM_AFTER_DAYS = 30;
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -62,7 +58,8 @@ const latchGoal = withTransaction(
 
 /**
  * Owns the `achievedAt` / `achievedAmount` latch: sets it (one notification) when a goal
- * reaches its target, clears it once the goal has been below target past the re-arm window.
+ * reaches its target, clears it once the goal is below target after its `reachedHoldDays`.
+ * Inside that window an oscillating balance can't re-notify.
  */
 const syncGoalAchievement = async ({
   userId,
@@ -73,7 +70,6 @@ const syncGoalAchievement = async ({
 }): Promise<{ goals: GoalModel[]; notified: number; errors: string[] }> => {
   const goals = await loadGoalsWithInsights({ userId, goalIds });
   const now = new Date();
-  const rearmBefore = subDays(now, REARM_AFTER_DAYS);
   let notified = 0;
   const errors: string[] = [];
 
@@ -95,7 +91,10 @@ const syncGoalAchievement = async ({
           goal.achievedAmount = achievedAmount.toNumber();
           notified += 1;
         }
-      } else if (goal.achievedAt && new Date(goal.achievedAt) < rearmBefore) {
+      } else if (
+        goal.achievedAt &&
+        !isWithinReachedHold({ achievedAt: goal.achievedAt, reachedHoldDays: goal.reachedHoldDays, now })
+      ) {
         // Matching the read `achievedAt` keeps a concurrent re-latch from being wiped.
         const [rearmed] = await Goals.update(
           { achievedAt: null, achievedAmount: null },

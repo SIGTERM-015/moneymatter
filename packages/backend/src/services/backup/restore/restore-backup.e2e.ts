@@ -1157,7 +1157,9 @@ describe('Data backup restore (POST /user/backup/restore)', () => {
           const goals = await helpers.listGoals({ raw: true });
           expect(goals).toHaveLength(1);
           expect(goals[0]!.id).not.toBe(source.id);
-          expect(goals[0]!.accounts).toEqual([{ accountId: targetAccount.id, sharePercent: 75 }]);
+          expect(goals[0]!.accounts).toEqual([
+            { accountId: targetAccount.id, sharePercent: 75, fixedAmount: null, fixedPosition: null },
+          ]);
           expect(goals[0]!.logoImageId).toBeTruthy();
           expect(goals[0]!.logoImageId).not.toBe(source.logoImageId);
         },

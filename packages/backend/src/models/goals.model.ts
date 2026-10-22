@@ -1,4 +1,4 @@
-import { GOAL_NAME_MAX_LENGTH, GoalStatus, RecordId } from '@bt/shared/types';
+import { GOAL_NAME_MAX_LENGTH, GOAL_REACHED_HOLD_DAYS_DEFAULT, GoalStatus, RecordId } from '@bt/shared/types';
 import { IdColumn } from '@common/types/id-column';
 import { Money } from '@common/types/money';
 import { MoneyField } from '@common/types/money-column';
@@ -8,7 +8,7 @@ import Currencies from './currencies.model';
 import GoalAccounts from './goal-accounts.model';
 import Users from './users.model';
 
-/** Savings goal backed by percentage shares of the user's accounts. Envelope line goals are `BudgetLineGoals`. */
+/** Savings goal backed by shares or fixed amounts of the user's accounts. Envelope line goals are `BudgetLineGoals`. */
 @Table({
   tableName: 'Goals',
   timestamps: true,
@@ -48,6 +48,9 @@ export default class Goals extends Model {
 
   @MoneyField({ storage: 'cents', allowNull: true })
   declare achievedAmount: Money | null;
+
+  @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: GOAL_REACHED_HOLD_DAYS_DEFAULT })
+  reachedHoldDays!: number;
 
   @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: 0 })
   sortOrder!: number;
