@@ -19,6 +19,7 @@ import brandLogosRoutes from './routes/brand-logos.route';
 import budgetPlansRoutes from './routes/budget-plans.route';
 import categoriesRoutes from './routes/categories.route';
 import clientLogsRoutes from './routes/client-logs.route';
+import creditCardsRoutes from './routes/credit-cards.route';
 import modelsCurrenciesRoutes from './routes/currencies.route';
 import demoRoutes from './routes/demo.route';
 import exchangeRatesRoutes from './routes/exchange-rates';
@@ -177,6 +178,7 @@ export function setupRoutes(app: Express) {
 
   app.use(`${API_PREFIX}/user`, userRoutes);
   app.use(`${API_PREFIX}/accounts`, accountsRoutes);
+  app.use(`${API_PREFIX}/accounts`, creditCardsRoutes);
   app.use(`${API_PREFIX}/transactions`, transactionsRoutes);
   app.use(`${API_PREFIX}/attachments`, attachmentsRoutes);
   app.use(`${API_PREFIX}/logo-images`, logoImagesRoutes);
