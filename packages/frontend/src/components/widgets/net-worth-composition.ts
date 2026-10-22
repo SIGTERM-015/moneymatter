@@ -7,6 +7,7 @@ export interface NetWorthIncludeSettings {
   includeVentures: boolean;
   includeVehicles: boolean;
   includeLoans: boolean;
+  includeCards: boolean;
 }
 
 export interface NetWorthComponentBalances {
@@ -15,6 +16,7 @@ export interface NetWorthComponentBalances {
   venturesBalance: number;
   vehiclesBalance: number;
   loansBalance: number;
+  cardsBalance: number;
   totalBalance: number;
 }
 
@@ -26,7 +28,7 @@ export function composeNetWorth({
   settings: NetWorthIncludeSettings;
 }): number {
   // With nothing excluded the server-computed total is authoritative.
-  if (settings.includeVentures && settings.includeVehicles && settings.includeLoans) {
+  if (settings.includeVentures && settings.includeVehicles && settings.includeLoans && settings.includeCards) {
     return point.totalBalance;
   }
 
@@ -35,5 +37,7 @@ export function composeNetWorth({
   if (settings.includeVehicles) total += point.vehiclesBalance;
   // Loan balances are negative: including them subtracts debt, excluding them ignores it.
   if (settings.includeLoans) total += point.loansBalance;
+  // Card balances are what is owed, stored negative, so they behave like loans.
+  if (settings.includeCards) total += point.cardsBalance;
   return total;
 }

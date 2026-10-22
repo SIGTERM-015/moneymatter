@@ -23,7 +23,7 @@ const sumBuckets = ({ buckets }: { buckets: Bucket[] }): number =>
   buckets.reduce((total, bucket) => total + bucket.amount, 0);
 
 /**
- * `accountsBalance` nets negative account balances against positive ones, so the debt part is
+ * `accountsBalance` + `cardsBalance` net negative account balances against positive ones, so the debt part is
  * taken from the same accounts the server sums and moved into liabilities, leaving net worth unchanged.
  */
 export const computeAssetsLiabilities = ({
@@ -33,7 +33,7 @@ export const computeAssetsLiabilities = ({
 }: {
   point: Pick<
     CombinedBalanceHistoryEntity,
-    'accountsBalance' | 'portfoliosBalance' | 'venturesBalance' | 'vehiclesBalance' | 'loansBalance'
+    'accountsBalance' | 'cardsBalance' | 'portfoliosBalance' | 'venturesBalance' | 'vehiclesBalance' | 'loansBalance'
   >;
   accounts: CreditDebtAccount[];
   includeCreditLimit: boolean;
@@ -54,7 +54,7 @@ export const computeAssetsLiabilities = ({
   const assets = positiveDesc({
     buckets: [
       { key: 'investments', amount: point.portfoliosBalance },
-      { key: 'cash', amount: point.accountsBalance + creditDebt },
+      { key: 'cash', amount: point.accountsBalance + point.cardsBalance + creditDebt },
       { key: 'vehicles', amount: point.vehiclesBalance },
       { key: 'ventures', amount: point.venturesBalance },
     ],

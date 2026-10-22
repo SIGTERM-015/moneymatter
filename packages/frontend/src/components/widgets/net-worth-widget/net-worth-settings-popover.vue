@@ -23,6 +23,15 @@
           </div>
 
           <div class="flex items-center justify-between gap-2 rounded-md px-2 py-2">
+            <span class="text-sm font-medium">{{ $t('dashboard.widgets.netWorth.settings.cards') }}</span>
+            <Switch
+              :model-value="settings.includeCards"
+              :disabled="isUpdating"
+              @update:model-value="(value: boolean) => emit('save', { patch: { includeCards: value } })"
+            />
+          </div>
+
+          <div class="flex items-center justify-between gap-2 rounded-md px-2 py-2">
             <span class="text-sm font-medium">{{ $t('dashboard.widgets.netWorth.settings.vehicles') }}</span>
             <Switch
               :model-value="settings.includeVehicles"

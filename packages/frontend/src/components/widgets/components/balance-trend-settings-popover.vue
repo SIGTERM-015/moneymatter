@@ -151,6 +151,25 @@
                   @update:model-value="onIncludeLoansToggle"
                 />
               </div>
+
+              <div class="flex items-center justify-between gap-2 rounded-md px-2 py-2">
+                <div class="flex items-center gap-1">
+                  <span class="text-sm font-medium">
+                    {{ t('dashboard.widgets.balanceTrend.componentsSettings.cards') }}
+                  </span>
+                  <ResponsiveTooltip
+                    :delay-duration="100"
+                    :content="t('dashboard.widgets.balanceTrend.componentsSettings.cardsTooltip')"
+                    content-class-name="max-w-60"
+                  >
+                    <InfoIcon class="text-muted-foreground size-3.5 cursor-help" @click.prevent.stop />
+                  </ResponsiveTooltip>
+                </div>
+                <Switch
+                  :model-value="persistedSettings.includeCardsInTotal"
+                  @update:model-value="onIncludeCardsToggle"
+                />
+              </div>
             </div>
           </div>
         </template>
@@ -289,6 +308,7 @@ const FIT_TO_LATEST_DATA_DEFAULT = true;
 const INCLUDE_VEHICLES_DEFAULT = true;
 const INCLUDE_VENTURES_DEFAULT = true;
 const INCLUDE_LOANS_DEFAULT = true;
+const INCLUDE_CARDS_DEFAULT = true;
 
 const persistedSettings = computed(() => {
   const cfg = widgetConfigRef?.value?.config;
@@ -301,6 +321,7 @@ const persistedSettings = computed(() => {
     includeVehiclesInTotal: (cfg?.includeVehiclesInTotal as boolean | undefined) ?? INCLUDE_VEHICLES_DEFAULT,
     includeVenturesInTotal: (cfg?.includeVenturesInTotal as boolean | undefined) ?? INCLUDE_VENTURES_DEFAULT,
     includeLoansInTotal: (cfg?.includeLoansInTotal as boolean | undefined) ?? INCLUDE_LOANS_DEFAULT,
+    includeCardsInTotal: (cfg?.includeCardsInTotal as boolean | undefined) ?? INCLUDE_CARDS_DEFAULT,
     includePlanned: readIncludePlanned({ config: cfg }),
   };
 });
@@ -323,6 +344,9 @@ const includeInTotalSummary = computed(() => {
   }
   if (!persistedSettings.value.includeLoansInTotal) {
     excluded.push(t('dashboard.widgets.balanceTrend.componentsSettings.loans'));
+  }
+  if (!persistedSettings.value.includeCardsInTotal) {
+    excluded.push(t('dashboard.widgets.balanceTrend.componentsSettings.cards'));
   }
   return excluded.length === 0
     ? t('dashboard.widgets.balanceTrend.componentsSettings.allIncluded')
@@ -439,6 +463,10 @@ function onIncludeVenturesToggle(value: boolean) {
 
 function onIncludeLoansToggle(value: boolean) {
   persistConfig({ includeLoansInTotal: value });
+}
+
+function onIncludeCardsToggle(value: boolean) {
+  persistConfig({ includeCardsInTotal: value });
 }
 
 async function onIncludePlannedToggle(value: boolean) {
