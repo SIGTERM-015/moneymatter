@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_CATEGORIES,
   ACCOUNT_TYPES,
   API_ERROR_CODES,
   type AccountExternalData,
@@ -120,14 +121,18 @@ export const linkAccountToBankConnection = withTransaction(
     });
 
     // Stored balances include the credit limit. Adopting the bank's limit shifts
-    // the stored balance by the same delta so displayed history stays put.
+    // the stored balance by the same delta so displayed history stays put. A card
+    // balance is what is owed and never includes the limit, so it is not shifted.
     const newCreditLimit = Money.fromCents(Number(externalAccount.metadata?.creditLimit) || 0);
     if (!newCreditLimit.equals(account.creditLimit)) {
       await updateAccount({
         id: accountId,
         userId,
         creditLimit: newCreditLimit,
-        currentBalance: account.currentBalance.add(newCreditLimit.subtract(account.creditLimit)),
+        currentBalance:
+          externalAccount.accountCategory === ACCOUNT_CATEGORIES.creditCard
+            ? account.currentBalance
+            : account.currentBalance.add(newCreditLimit.subtract(account.creditLimit)),
       });
       await account.reload();
     }

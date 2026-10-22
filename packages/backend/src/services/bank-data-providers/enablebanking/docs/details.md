@@ -96,6 +96,16 @@ POST /bank-data-providers/enablebanking/callback
 - Maps to application's `ProviderAccount` format
 - **Balance priority:** ITBD > CLBD > ITAV > CLAV > first available. Booked types come first so pending holds never move the account balance
 - Creates new accounts or updates existing ones by `externalId` (account UID)
+- **Account type (`cash_account_type`):** stored in `externalData.cashAccountType` (also inside `rawAccountData`).
+  - `CARD` → provider type `credit`, created with `accountCategory = credit-card` and `creditLimit` from `credit_limit` (only when its currency matches the account's). Linking an existing account to a card adopts the limit without shifting the balance by it.
+  - `LOAN` → imported as a general account (loans have a dedicated flow and are not created by sync); only `cashAccountType` marks it.
+  - `CACC`, `SVGS`, `CASH`, `OTHR` → general account, provider type `debit`.
+- **Card balance sign** (`utils/card-account.ts`): the system stores what is owed as negative. The balance is picked with the priority above, then:
+  - ITAV/CLAV/OPAV/FWAV are _available_ credit, not debt: `balance = available - creditLimit` (needs a known limit; without one the amount is kept).
+  - A zero/negative ITBD/CLBD is kept as owed.
+  - A positive ITBD/CLBD is a debt reported unsigned unless an ITAV/CLAV balance in the same currency shows the whole limit still available (then it is a real credit and the sign is kept). With no limit or no available balance to corroborate it, the sign is kept.
+  - Applied in `fetchAccounts`, `fetchBalance` and therefore on every sync, for any account stored with `cashAccountType = CARD`.
+  - Not verified against a real bank: the heuristic rests on the documented API shapes only.
 
 ## Transaction Sync Process
 
