@@ -182,6 +182,28 @@
         "enabled": "Enabled",
         "disabled": "Disabled"
       },
+      "creditCard": {
+        "title": "Credit card",
+        "used": "Used:",
+        "available": "Available:",
+        "limit": "Credit limit:",
+        "statementDay": "Statement day",
+        "paymentDay": "Payment due day",
+        "dayPlaceholder": "Day of month, 1–31",
+        "apr": "APR",
+        "aprPlaceholder": "e.g. 19.99",
+        "interestFreeMonths": "Interest-free months",
+        "interestFreeMonthsPlaceholder": "e.g. 0",
+        "save": "Save card details",
+        "saveSuccess": "Card details saved",
+        "saveError": "Failed to save card details",
+        "loadError": "Failed to load card details",
+        "errors": {
+          "dayRange": "Day of month must be between 1 and 31.",
+          "aprRange": "APR must be between 0 and 100, with at most 4 decimals.",
+          "interestFreeMonthsRange": "Enter a whole number of months from 0 to 999."
+        }
+      },
       "group": {
         "label": "Account group",
         "tooltip": "Group multiple accounts together to keep your dashboard sidebar organized",

@@ -7,7 +7,7 @@ import { useAccountAccess } from '@/composable/use-account-access';
 import { useAccountCurrencyCode } from '@/composable/use-account-currency-code';
 import { toLocalCurrencyNumber } from '@/js/helpers';
 import { useCurrenciesStore } from '@/stores';
-import { ACCOUNT_TYPES, AccountModel, isDedicatedFlowAccountCategory } from '@bt/shared/types';
+import { ACCOUNT_CATEGORIES, ACCOUNT_TYPES, AccountModel, isDedicatedFlowAccountCategory } from '@bt/shared/types';
 import { ChevronDownIcon, ChevronUpIcon } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
 import { computed, defineAsyncComponent, ref, toRef } from 'vue';
@@ -16,6 +16,7 @@ import { useI18n } from 'vue-i18n';
 const CreditLimitEditPopover = defineAsyncComponent(() => import('./credit-limit-edit-popover.vue'));
 const InitialBalanceEditPopover = defineAsyncComponent(() => import('./initial-balance-edit-popover.vue'));
 const AccountCategoryEditPopover = defineAsyncComponent(() => import('./account-category-edit-popover.vue'));
+const CreditCardSection = defineAsyncComponent(() => import('./credit-card-section.vue'));
 
 const { t } = useI18n();
 
@@ -35,6 +36,10 @@ const isCategoryEditable = computed(
 );
 const isInitialBalanceEditable = computed(
   () => isCategoryEditable.value && props.account.type === ACCOUNT_TYPES.system,
+);
+// Card details are owner-scoped on the backend, like the other edit controls here.
+const showCreditCardSection = computed(
+  () => isOwner.value && props.account.accountCategory === ACCOUNT_CATEGORIES.creditCard,
 );
 </script>
 
@@ -123,6 +128,11 @@ const isInitialBalanceEditable = computed(
           </div>
         </Collapsible.CollapsibleContent>
       </Collapsible.Collapsible>
+
+      <template v-if="showCreditCardSection">
+        <Separator />
+        <CreditCardSection :account="account" :currency-code="currencyCode" />
+      </template>
     </div>
   </Tabs.TabsContent>
 </template>

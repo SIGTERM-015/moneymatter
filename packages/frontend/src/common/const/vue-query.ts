@@ -250,6 +250,9 @@ export const VUE_QUERY_CACHE_KEYS = Object.freeze({
   loanAllPayments: [transactionChange, 'loan-all-payments'] as const,
   loanBalanceHistory: [transactionChange, 'loan-balance-history'] as const,
 
+  // credit cards
+  creditCardDetails: [transactionChange, 'credit-card-details'] as const,
+
   // user settings
   userSettings: ['user-settings'] as const,
 
