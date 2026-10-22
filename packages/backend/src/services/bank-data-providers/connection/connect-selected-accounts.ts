@@ -254,7 +254,7 @@ const createAccountsForConnection = withTransaction(
           userId,
           name: accountName,
           type: PROVIDER_TO_ACCOUNT_TYPE[connection.providerType as BANK_PROVIDER_TYPE],
-          accountCategory: ACCOUNT_CATEGORIES.general,
+          accountCategory: providerAccount.accountCategory ?? ACCOUNT_CATEGORIES.general,
           currencyCode: providerAccount.currency,
           initialBalance: providerAccount.balance,
           refInitialBalance: accountRefBalance,
