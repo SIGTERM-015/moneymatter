@@ -252,6 +252,8 @@ export const VUE_QUERY_CACHE_KEYS = Object.freeze({
 
   // credit cards
   creditCardDetails: [transactionChange, 'credit-card-details'] as const,
+  cardInstallmentPlans: [transactionChange, 'card-installment-plans'] as const,
+  cardMonthlySummary: [transactionChange, 'card-monthly-summary'] as const,
 
   // user settings
   userSettings: ['user-settings'] as const,
