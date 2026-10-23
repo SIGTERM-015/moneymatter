@@ -21,6 +21,7 @@ import * as Transactions from '@models/transactions.model';
 import * as UsersCurrencies from '@models/users-currencies.model';
 import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 import { DOMAIN_EVENTS, eventBus } from '@services/common/event-bus';
+import { matchCardPaymentLegs } from '@services/credit-cards/installments/card-payment-matching';
 import { assertLoanPaymentAllowed } from '@services/loans/assert-loan-payment-allowed';
 import { applyPayeeCategorization } from '@services/payees/apply-categorization';
 import { applyPayeeDefaultLocation } from '@services/payees/apply-default-location';
@@ -608,6 +609,8 @@ export const createTransaction = withTransaction(
           ]);
           transactions = [res.baseTx, res.oppositeTx];
         }
+
+        await matchCardPaymentLegs({ legs: transactions });
       }
 
       // Handle splits for non-transfer transactions

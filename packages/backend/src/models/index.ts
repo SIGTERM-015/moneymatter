@@ -18,6 +18,8 @@ import BudgetLinesModel from './budget-lines.model';
 import BudgetPeriodsModel from './budget-periods.model';
 import BudgetPlanAccountsModel from './budget-plan-accounts.model';
 import BudgetPlansModel from './budget-plans.model';
+import CardInstallmentPlansModel from './card-installment-plans.model';
+import CardInstallmentsModel from './card-installments.model';
 import CategoriesModel from './categories.model';
 import CategoryTagsModel from './category-tags.model';
 import { connection } from './connection';
@@ -167,6 +169,8 @@ const models = [
   VehiclesModel,
   LoanDetailsModel,
   CreditCardDetailsModel,
+  CardInstallmentPlansModel,
+  CardInstallmentsModel,
   TransactionAutomationsModel,
   TransactionAttachmentsModel,
   ImportBatchesModel,

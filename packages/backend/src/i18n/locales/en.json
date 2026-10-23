@@ -263,7 +263,13 @@
     "correctionOverpay": "Corrected balance would overpay the loan by {{overpayAmount}}: payments totaling {{paymentsTotal}} are dated on/after {{asOfDate}}"
   },
   "creditCards": {
-    "creditCardNotFound": "Credit card not found."
+    "creditCardNotFound": "Credit card not found.",
+    "installmentPlanNotFound": "Installment plan not found.",
+    "installmentNotFound": "Installment not found.",
+    "installmentNotPending": "Only a pending installment can change its amount.",
+    "installmentNotProposed": "This installment has no payment waiting for confirmation.",
+    "purchaseTransactionInvalid": "The purchase must be an expense on this card.",
+    "purchaseAlreadyDeferred": "This purchase already has an installment plan."
   },
   "errors": {
     "connectionNotFound": "Connection not found",

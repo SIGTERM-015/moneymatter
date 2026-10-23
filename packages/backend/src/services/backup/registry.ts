@@ -30,7 +30,8 @@ export type BackupParentScope =
   | 'budgetPlans'
   | 'budgetLines'
   | 'trackerLines'
-  | 'goals';
+  | 'goals'
+  | 'cardInstallmentPlans';
 
 /**
  * How a table's rows are selected for the current user.
@@ -543,6 +544,14 @@ const TABLE_DEFS = [
     restoreMode: 'insert',
   },
 
+  {
+    fileName: 'card-installment-plans',
+    model: models.CardInstallmentPlans,
+    tier: 5,
+    scope: { strategy: 'userColumn', column: 'userId' },
+    restoreMode: 'insert',
+  },
+
   // tier 6
   {
     fileName: 'subscription-period-notifications',
@@ -570,6 +579,14 @@ const TABLE_DEFS = [
     model: models.BudgetAssignments,
     tier: 6,
     scope: { strategy: 'viaParent', fk: 'lineId', parent: 'budgetLines' },
+    restoreMode: 'insert',
+  },
+
+  {
+    fileName: 'card-installments',
+    model: models.CardInstallments,
+    tier: 6,
+    scope: { strategy: 'viaParent', fk: 'planId', parent: 'cardInstallmentPlans' },
     restoreMode: 'insert',
   },
 

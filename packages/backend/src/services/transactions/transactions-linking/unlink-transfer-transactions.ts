@@ -5,6 +5,7 @@ import { logger } from '@js/utils/logger';
 import { findTransactions, updateTransactions } from '@models/transactions-query';
 import * as Transactions from '@models/transactions.model';
 import { withTransaction } from '@root/services/common/with-transaction';
+import { releaseCardPayments } from '@services/credit-cards/installments/card-payment-matching';
 import { assertTxWriteAccess } from '@services/sharing/auth/authorize-account-write.service';
 import { Op } from 'sequelize';
 
@@ -38,6 +39,7 @@ export const unlinkTransferTransactions = withTransaction(
       }
 
       const txIds = transactions.map((tx) => tx.id);
+      await releaseCardPayments({ transactionIds: txIds });
       await updateTransactions({
         planned: 'include',
         access: 'unscoped-internal',

@@ -12,6 +12,7 @@ import TransactionSplits from '@models/transaction-splits.model';
 import { findTransactions, updateTransactions } from '@models/transactions-query';
 import * as Transactions from '@models/transactions.model';
 import { withTransaction } from '@root/services/common/with-transaction';
+import { matchCardPaymentLegs } from '@services/credit-cards/installments/card-payment-matching';
 import { assertTxWriteAccess } from '@services/sharing/auth/authorize-account-write.service';
 import { Op } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
@@ -153,10 +154,12 @@ export const linkTransactions = withTransaction(
           returning: true,
         });
 
-        result.push([
+        const pair = [
           results.find((tx) => tx.id === baseTxId),
           results.find((tx) => tx.id === oppositeTxId),
-        ] as ResultStruct);
+        ] as ResultStruct;
+        await matchCardPaymentLegs({ legs: pair });
+        result.push(pair);
       }
 
       return result;

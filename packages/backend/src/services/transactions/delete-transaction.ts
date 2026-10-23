@@ -5,6 +5,7 @@ import { logger } from '@js/utils/logger';
 import PortfolioTransfers from '@models/investments/portfolio-transfers.model';
 import RefundTransactions from '@models/refund-transactions.model';
 import * as Transactions from '@models/transactions.model';
+import { releaseCardPaymentsOfTransaction } from '@services/credit-cards/installments/card-payment-matching';
 import { deletePortfolioTransfer } from '@services/investments/portfolios/transfers';
 import { assertSharedWritePhase1Guards } from '@services/sharing/auth/authorize-account-write.service';
 import { syncRefundLinkedFlags } from '@services/tx-refunds/sync-refund-linked-flags';
@@ -39,6 +40,7 @@ export const deleteTransaction = withTransaction(
       // Not gated on `refundLinked` — the flag is a cache of the link rows, and a row whose flag
       // drifted false would otherwise keep its links and leave the other end flagged forever.
       await unlinkRefundTransaction({ id });
+      await releaseCardPaymentsOfTransaction({ transaction: tx });
 
       // The model's deleteTransactionById filters by `(id, userId)` — pass the row's
       // actual creator userId rather than the caller's so a recipient with `'all'`
