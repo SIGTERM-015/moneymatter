@@ -241,7 +241,7 @@ const props = defineProps<{
 
 const { t } = useI18n();
 
-type BalanceTypeValue = 'total' | 'accounts' | 'portfolios' | 'ventures' | 'vehicles' | 'loans';
+type BalanceTypeValue = 'total' | 'accounts' | 'portfolios' | 'ventures' | 'vehicles' | 'loans' | 'cards';
 type BalanceTypeOption = { value: BalanceTypeValue; label: string };
 
 const selectedBalanceType = ref<BalanceTypeOption>({
@@ -289,11 +289,16 @@ const includeLoansInTotal = computed<boolean>(() => {
   const cfg = widgetConfigRef?.value?.config;
   return (cfg?.includeLoansInTotal as boolean | undefined) ?? true;
 });
+const includeCardsInTotal = computed<boolean>(() => {
+  const cfg = widgetConfigRef?.value?.config;
+  return (cfg?.includeCardsInTotal as boolean | undefined) ?? true;
+});
 
 const compositionSettings = computed<NetWorthIncludeSettings>(() => ({
   includeVentures: includeVenturesInTotal.value,
   includeVehicles: includeVehiclesInTotal.value,
   includeLoans: includeLoansInTotal.value,
+  includeCards: includeCardsInTotal.value,
 }));
 const includePlanned = computed<boolean>(() => readIncludePlanned({ config: widgetConfigRef?.value?.config }));
 
@@ -314,6 +319,7 @@ const tooltip = reactive({
   venturesBalance: 0,
   vehiclesBalance: 0,
   loansBalance: 0,
+  cardsBalance: 0,
   totalBalance: 0,
   // Point-over-point change of each component, so the tooltip can show which
   // portion of net worth actually moved between the hovered day and the prior one.
@@ -322,6 +328,7 @@ const tooltip = reactive({
   venturesDelta: 0,
   vehiclesDelta: 0,
   loansDelta: 0,
+  cardsDelta: 0,
   // Change of the currently-charted line (matches the selected balance type).
   deltaAbsolute: 0,
   deltaPercent: 0,
@@ -423,6 +430,7 @@ const hasVehicleData = computed(
 
 // Same gating for loans; balances are negative, so check `!== 0` (not `> 0`) to detect any active loan.
 const hasLoanData = computed(() => !!balanceHistory.value && balanceHistory.value.some((i) => i.loansBalance !== 0));
+const hasCardData = computed(() => !!balanceHistory.value && balanceHistory.value.some((i) => i.cardsBalance !== 0));
 
 // Tooltip rows for vehicles/ventures/loans show when the component contributes
 // to what the user is currently viewing — either it's flowing into the Total
@@ -443,6 +451,11 @@ const showLoansRow = computed(() => {
   if (!hasLoanData.value) return false;
   if (selectedBalanceType.value.value === 'loans') return true;
   return includeLoansInTotal.value;
+});
+const showCardsRow = computed(() => {
+  if (!hasCardData.value) return false;
+  if (selectedBalanceType.value.value === 'cards') return true;
+  return includeCardsInTotal.value;
 });
 
 const tooltipCurrency = computed(() => baseCurrency.value?.currency?.code);
@@ -493,6 +506,13 @@ const tooltipComponentRows = computed(() =>
       delta: tooltip.loansDelta,
       show: showLoansRow.value,
     },
+    {
+      key: 'cards',
+      label: t('dashboard.widgets.balanceTrend.tooltip.cards'),
+      value: tooltip.cardsBalance,
+      delta: tooltip.cardsDelta,
+      show: showCardsRow.value,
+    },
   ].filter((row) => row.show),
 );
 
@@ -510,6 +530,9 @@ const balanceTypeOptions = computed<BalanceTypeOption[]>(() => {
   }
   if (hasLoanData.value) {
     options.push({ value: 'loans', label: t('dashboard.widgets.balanceTrend.balanceTypes.loans') });
+  }
+  if (hasCardData.value) {
+    options.push({ value: 'cards', label: t('dashboard.widgets.balanceTrend.balanceTypes.cards') });
   }
   return options;
 });
@@ -529,6 +552,11 @@ watch(hasVehicleData, (val) => {
 });
 watch(hasLoanData, (val) => {
   if (!val && selectedBalanceType.value.value === 'loans') {
+    selectedBalanceType.value = balanceTypeOptions.value[0]!;
+  }
+});
+watch(hasCardData, (val) => {
+  if (!val && selectedBalanceType.value.value === 'cards') {
     selectedBalanceType.value = balanceTypeOptions.value[0]!;
   }
 });
@@ -586,6 +614,9 @@ const chartData = computed(() => {
       case 'loans':
         value = point.loansBalance;
         break;
+      case 'cards':
+        value = point.cardsBalance;
+        break;
       default:
         value = effectiveTotal;
     }
@@ -598,6 +629,7 @@ const chartData = computed(() => {
       venturesBalance: point.venturesBalance,
       vehiclesBalance: point.vehiclesBalance,
       loansBalance: point.loansBalance,
+      cardsBalance: point.cardsBalance,
       totalBalance: effectiveTotal,
     };
   });
@@ -1023,6 +1055,7 @@ const renderChart = () => {
       tooltip.venturesBalance = d.venturesBalance;
       tooltip.vehiclesBalance = d.vehiclesBalance;
       tooltip.loansBalance = d.loansBalance;
+      tooltip.cardsBalance = d.cardsBalance;
       tooltip.totalBalance = d.totalBalance;
 
       // Compute point-over-point deltas (charted line + each component)
@@ -1036,6 +1069,7 @@ const renderChart = () => {
         tooltip.venturesDelta = d.venturesBalance - prevPoint.venturesBalance;
         tooltip.vehiclesDelta = d.vehiclesBalance - prevPoint.vehiclesBalance;
         tooltip.loansDelta = d.loansBalance - prevPoint.loansBalance;
+        tooltip.cardsDelta = d.cardsBalance - prevPoint.cardsBalance;
         tooltip.hasDelta = true;
       } else {
         tooltip.deltaAbsolute = 0;
@@ -1045,6 +1079,7 @@ const renderChart = () => {
         tooltip.venturesDelta = 0;
         tooltip.vehiclesDelta = 0;
         tooltip.loansDelta = 0;
+        tooltip.cardsDelta = 0;
         tooltip.hasDelta = false;
       }
 
@@ -1191,6 +1226,11 @@ const displayBalance = computed(() => {
       return {
         current: latestEntry.loansBalance || 0,
         previous: prevPeriodLastEntry?.loansBalance || 0,
+      };
+    case 'cards':
+      return {
+        current: latestEntry.cardsBalance || 0,
+        previous: prevPeriodLastEntry?.cardsBalance || 0,
       };
     case 'total':
     default:

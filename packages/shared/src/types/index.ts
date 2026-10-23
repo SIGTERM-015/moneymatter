@@ -19,6 +19,7 @@ export * from './budget-plans';
 export * from './goals';
 export * from './subscriptions';
 export * from './loans';
+export * from './credit-cards';
 export * from './vehicles';
 export * from './investments';
 export * from './venture';

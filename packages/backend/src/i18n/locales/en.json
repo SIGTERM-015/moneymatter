@@ -262,6 +262,9 @@
     "correctionAsOfBeforeStartDate": "currentBalanceAsOf cannot be earlier than the loan start date",
     "correctionOverpay": "Corrected balance would overpay the loan by {{overpayAmount}}: payments totaling {{paymentsTotal}} are dated on/after {{asOfDate}}"
   },
+  "creditCards": {
+    "creditCardNotFound": "Credit card not found."
+  },
   "errors": {
     "connectionNotFound": "Connection not found",
     "connectionNotFoundOrNotYours": "Connection not found or does not belong to you",

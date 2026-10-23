@@ -20,7 +20,8 @@
           "portfolios": "Portfolios",
           "ventures": "Ventures",
           "vehicles": "Vehicles",
-          "loans": "Loans"
+          "loans": "Loans",
+          "cards": "Cards"
         },
         "tooltip": {
           "accounts": "Accounts:",
@@ -28,7 +29,8 @@
           "total": "Total:",
           "ventures": "Ventures:",
           "vehicles": "Vehicles:",
-          "loans": "Loans:"
+          "loans": "Loans:",
+          "cards": "Cards:"
         },
         "today": "Today",
         "vsPreviousPeriod": "vs previous period",
@@ -72,6 +74,8 @@
           "ventures": "Ventures",
           "loans": "Loans",
           "loansTooltip": "When on, your outstanding loan balances are subtracted from the total (true net worth). When off, loans are ignored so the total shows assets only.",
+          "cards": "Credit cards",
+          "cardsTooltip": "When on, what you owe on your credit cards is subtracted from the total. When off, card balances are ignored.",
           "allIncluded": "All components",
           "excluding": "Excluding {items}"
         },
@@ -158,11 +162,13 @@
         "components": {
           "ventures": "Ventures",
           "vehicles": "Vehicles",
-          "loans": "Loans"
+          "loans": "Loans",
+          "cards": "Credit cards"
         },
         "settings": {
           "title": "Include in net worth",
           "loans": "Loans",
+          "cards": "Credit cards",
           "vehicles": "Vehicles",
           "ventures": "Ventures"
         },

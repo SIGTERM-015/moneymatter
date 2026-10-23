@@ -17,9 +17,19 @@ import {
 
 const ymd = (date: Date) => format(date, 'yyyy-MM-dd');
 
-const ALL_INCLUDED: NetWorthIncludeSettings = { includeVentures: true, includeVehicles: true, includeLoans: true };
+const ALL_INCLUDED: NetWorthIncludeSettings = {
+  includeVentures: true,
+  includeVehicles: true,
+  includeLoans: true,
+  includeCards: true,
+};
 
-const ALL_EXCLUDED: NetWorthIncludeSettings = { includeVentures: false, includeVehicles: false, includeLoans: false };
+const ALL_EXCLUDED: NetWorthIncludeSettings = {
+  includeVentures: false,
+  includeVehicles: false,
+  includeLoans: false,
+  includeCards: false,
+};
 
 const widgetConfig = (config?: Record<string, unknown>) => ({ widgetId: 'net-worth', colSpan: 1, config });
 
@@ -30,6 +40,7 @@ const point = ({
   ventures = 0,
   vehicles = 0,
   loans = 0,
+  cards = 0,
 }: {
   date: string;
   accounts?: number;
@@ -37,6 +48,7 @@ const point = ({
   ventures?: number;
   vehicles?: number;
   loans?: number;
+  cards?: number;
 }): CombinedBalanceHistoryEntity => ({
   date,
   accountsBalance: accounts,
@@ -44,10 +56,19 @@ const point = ({
   venturesBalance: ventures,
   vehiclesBalance: vehicles,
   loansBalance: loans,
-  totalBalance: accounts + portfolios + ventures + vehicles + loans,
+  cardsBalance: cards,
+  totalBalance: accounts + portfolios + ventures + vehicles + loans + cards,
 });
 
-const POINT = point({ date: '2026-07-15', accounts: 1000, portfolios: 500, ventures: 200, vehicles: 300, loans: -400 });
+const POINT = point({
+  date: '2026-07-15',
+  accounts: 1000,
+  portfolios: 500,
+  ventures: 200,
+  vehicles: 300,
+  loans: -400,
+  cards: -250,
+});
 
 // Jun 30 baseline + one point per month end, Feb..Jul 2026.
 const SERIES: CombinedBalanceHistoryEntity[] = [
@@ -66,7 +87,7 @@ const QUARTER = { from: parseISO('2026-07-01'), to: parseISO('2026-09-30') };
 
 describe('effectiveNetWorth', () => {
   it('sums every component when all are included', () => {
-    expect(effectiveNetWorth({ point: POINT, settings: ALL_INCLUDED })).toBe(1600);
+    expect(effectiveNetWorth({ point: POINT, settings: ALL_INCLUDED })).toBe(1350);
   });
 
   it('always counts accounts and portfolios', () => {
@@ -80,12 +101,16 @@ describe('effectiveNetWorth', () => {
     expect(withoutLoans - withLoans).toBe(400);
   });
 
+  it('raises net worth by the owed card balance when cards are excluded', () => {
+    expect(effectiveNetWorth({ point: POINT, settings: { ...ALL_INCLUDED, includeCards: false } })).toBe(1600);
+  });
+
   it('drops only ventures when ventures are excluded', () => {
-    expect(effectiveNetWorth({ point: POINT, settings: { ...ALL_INCLUDED, includeVentures: false } })).toBe(1400);
+    expect(effectiveNetWorth({ point: POINT, settings: { ...ALL_INCLUDED, includeVentures: false } })).toBe(1150);
   });
 
   it('drops only vehicles when vehicles are excluded', () => {
-    expect(effectiveNetWorth({ point: POINT, settings: { ...ALL_INCLUDED, includeVehicles: false } })).toBe(1300);
+    expect(effectiveNetWorth({ point: POINT, settings: { ...ALL_INCLUDED, includeVehicles: false } })).toBe(1050);
   });
 });
 
@@ -105,13 +130,19 @@ describe('readNetWorthSettings', () => {
       includeVentures: true,
       includeVehicles: true,
       includeLoans: false,
+      includeCards: true,
     });
   });
 
   it('reads every stored toggle', () => {
     expect(
       readNetWorthSettings({
-        widgetConfig: widgetConfig({ includeVentures: false, includeVehicles: false, includeLoans: false }),
+        widgetConfig: widgetConfig({
+          includeVentures: false,
+          includeVehicles: false,
+          includeLoans: false,
+          includeCards: false,
+        }),
       }),
     ).toEqual(ALL_EXCLUDED);
   });
@@ -119,7 +150,12 @@ describe('readNetWorthSettings', () => {
   it('falls back to the default for non-boolean stored values', () => {
     expect(
       readNetWorthSettings({
-        widgetConfig: widgetConfig({ includeVentures: 'false', includeVehicles: 0, includeLoans: {} }),
+        widgetConfig: widgetConfig({
+          includeVentures: 'false',
+          includeVehicles: 0,
+          includeLoans: {},
+          includeCards: null,
+        }),
       }),
     ).toEqual(ALL_INCLUDED);
   });
@@ -358,7 +394,7 @@ describe('computeTrendBars', () => {
 
 describe('excludedComponents', () => {
   it('lists every excluded component in bar order', () => {
-    expect(excludedComponents({ settings: ALL_EXCLUDED })).toEqual(['ventures', 'vehicles', 'loans']);
+    expect(excludedComponents({ settings: ALL_EXCLUDED })).toEqual(['ventures', 'vehicles', 'loans', 'cards']);
   });
 
   it('lists only the excluded ones', () => {

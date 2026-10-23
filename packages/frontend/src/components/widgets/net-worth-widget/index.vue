@@ -32,6 +32,7 @@ const COMPONENT_LABEL_KEYS: Record<NetWorthComponentKey, string> = {
   ventures: 'dashboard.widgets.netWorth.components.ventures',
   vehicles: 'dashboard.widgets.netWorth.components.vehicles',
   loans: 'dashboard.widgets.netWorth.components.loans',
+  cards: 'dashboard.widgets.netWorth.components.cards',
 };
 
 const MIN_TREND_BAR_HEIGHT_PERCENT = 4;

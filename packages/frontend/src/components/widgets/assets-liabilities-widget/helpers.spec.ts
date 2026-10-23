@@ -5,6 +5,7 @@ import { computeAssetsLiabilities, formatShareLabel } from './helpers';
 
 const point = {
   accountsBalance: 1_500,
+  cardsBalance: 0,
   portfoliosBalance: 3_000,
   venturesBalance: 0,
   vehiclesBalance: 0,
@@ -83,11 +84,31 @@ describe('computeAssetsLiabilities', () => {
     expect(result.liabilities).toContainEqual({ key: 'creditAndOverdrafts', amount: 200 });
     expect(result.netWorth).toBe(
       point.accountsBalance +
+        point.cardsBalance +
         point.portfoliosBalance +
         point.venturesBalance +
         point.vehiclesBalance +
         point.loansBalance,
     );
+  });
+});
+
+describe('computeAssetsLiabilities with a card bucket', () => {
+  it('moves the owed card balance from the cards bucket into liabilities, keeping the server total', () => {
+    const cardPoint = { ...point, accountsBalance: 2_000, cardsBalance: -500 };
+
+    const result = computeAssetsLiabilities({
+      point: cardPoint,
+      accounts: [
+        account({ balance: 2_000 }),
+        account({ balance: -500, accountCategory: ACCOUNT_CATEGORIES.creditCard }),
+      ],
+      includeCreditLimit: false,
+    });
+
+    expect(result.assets).toContainEqual({ key: 'cash', amount: 2_000 });
+    expect(result.liabilities).toContainEqual({ key: 'creditAndOverdrafts', amount: 500 });
+    expect(result.netWorth).toBe(2_000 - 500 + 3_000 - 2_000);
   });
 });
 

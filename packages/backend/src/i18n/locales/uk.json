@@ -264,6 +264,9 @@
     "correctionAsOfBeforeStartDate": "currentBalanceAsOf не може бути раніше за дату початку кредиту",
     "correctionOverpay": "Скоригований залишок боргу призвів би до переплати кредиту на {{overpayAmount}}: платежі на загальну суму {{paymentsTotal}} датовані на дату {{asOfDate}} або пізніше"
   },
+  "creditCards": {
+    "creditCardNotFound": "Кредитну картку не знайдено."
+  },
   "errors": {
     "connectionNotFound": "Підключення не знайдено",
     "connectionNotFoundOrNotYours": "Підключення не знайдено або не належить вам",
