@@ -3,7 +3,7 @@ import { Money } from '@common/types/money';
 import { addMonths, format, getDaysInMonth, parse } from 'date-fns';
 
 /** `YYYY-MM` of a UTC instant. Card statements and installment months are compared on UTC days. */
-export const toUtcMonth = ({ date }: { date: Date }): string => date.toISOString().slice(0, 7);
+const toUtcMonth = ({ date }: { date: Date }): string => date.toISOString().slice(0, 7);
 
 const HOUR_MS = 3_600_000;
 // Every civil time zone lies between UTC-12 and UTC+14.
