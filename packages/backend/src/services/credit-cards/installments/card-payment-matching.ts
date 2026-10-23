@@ -6,7 +6,12 @@ import { findTransactions } from '@models/transactions-query';
 import type Transactions from '@models/transactions.model';
 import { Op } from 'sequelize';
 
-import { classifyCardPayment, lastClosedStatementMonth, selectDueInstallments, toUtcMonth } from './installment-math';
+import {
+  candidateLocalMonths,
+  classifyCardPayment,
+  lastClosedStatementMonth,
+  selectDueInstallments,
+} from './installment-math';
 import { refreshPlanStatuses } from './refresh-plan-statuses';
 import { getStatementDay, getStatementSpend } from './statement-spend';
 
@@ -42,22 +47,25 @@ const matchLeg = async ({ leg }: { leg: Leg }) => {
   });
   if (alreadyLinked) return;
 
-  const month = toUtcMonth({ date: new Date(leg.time) });
+  const months = candidateLocalMonths({ date: new Date(leg.time) });
   const installments = await CardInstallments.findAll({
-    where: { status: CARD_INSTALLMENT_STATUSES.pending, dueMonth: { [Op.lte]: `${month}-01` } },
+    where: { status: CARD_INSTALLMENT_STATUSES.pending, dueMonth: { [Op.lte]: `${months.at(-1)}-01` } },
     include: [{ model: CardInstallmentPlans, where: { accountId: leg.accountId }, required: true, attributes: [] }],
   });
+  const rows = installments.map((row) => ({
+    row,
+    dueMonth: row.dueMonth.slice(0, 7),
+    amount: row.amount,
+    status: row.status,
+  }));
 
-  const { due, total } = selectDueInstallments({
-    installments: installments.map((row) => ({
-      row,
-      dueMonth: row.dueMonth.slice(0, 7),
-      amount: row.amount,
-      status: row.status,
-    })),
-    month,
-  });
-  if (!total.isPositive() || !leg.amount.equals(total)) return;
+  // A later month's due set contains the earlier one plus positive installments, so the
+  // candidate months can never both add up to the payment.
+  const match = months
+    .map((month) => selectDueInstallments({ installments: rows, month }))
+    .find(({ total }) => total.isPositive() && leg.amount.equals(total));
+  if (!match) return;
+  const { due, total } = match;
 
   const statementDay = await getStatementDay({ accountId: leg.accountId });
   const { spend } = await getStatementSpend({
@@ -66,12 +74,12 @@ const matchLeg = async ({ leg }: { leg: Leg }) => {
     statementDay,
   });
 
-  const match = classifyCardPayment({ amount: leg.amount, due: total, statementSpend: spend });
-  if (match === 'none') return;
+  const outcome = classifyCardPayment({ amount: leg.amount, due: total, statementSpend: spend });
+  if (outcome === 'none') return;
 
   const ids = due.map(({ row }) => row.id);
   await CardInstallments.update(
-    match === 'paid'
+    outcome === 'paid'
       ? { status: CARD_INSTALLMENT_STATUSES.paid, paidTransactionId: leg.id, paidAt: new Date(leg.time) }
       : { status: CARD_INSTALLMENT_STATUSES.proposed, paidTransactionId: leg.id, paidAt: null },
     { where: { id: { [Op.in]: ids } } },

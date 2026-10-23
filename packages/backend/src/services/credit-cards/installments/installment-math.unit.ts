@@ -5,6 +5,7 @@ import { describe, expect, it } from '@jest/globals';
 
 import {
   buildInstallmentMonths,
+  candidateLocalMonths,
   classifyCardPayment,
   lastClosedStatementMonth,
   selectDueInstallments,
@@ -45,6 +46,20 @@ describe('buildInstallmentMonths', () => {
       '2027-01',
       '2027-02',
     ]);
+  });
+});
+
+describe('candidateLocalMonths', () => {
+  it('includes the previous month for a payment made late on the last day west of UTC', () => {
+    expect(candidateLocalMonths({ date: new Date('2026-12-01T05:00:00Z') })).toEqual(['2026-11', '2026-12']);
+  });
+
+  it('includes the next month for a payment made early on the first day east of UTC', () => {
+    expect(candidateLocalMonths({ date: new Date('2026-11-30T20:00:00Z') })).toEqual(['2026-11', '2026-12']);
+  });
+
+  it('is one month mid-month', () => {
+    expect(candidateLocalMonths({ date: new Date('2026-11-15T12:00:00Z') })).toEqual(['2026-11']);
   });
 });
 

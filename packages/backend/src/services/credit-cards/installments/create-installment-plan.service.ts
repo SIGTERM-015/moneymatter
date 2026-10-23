@@ -85,6 +85,11 @@ const createInstallmentPlanImpl = async ({
       interestFreeMonths,
     }).map((cents) => Money.fromCents(cents));
 
+  // An equal split of fewer cents than installments, or a rounded annuity, can leave one at zero.
+  if (schedule.some((amount) => !amount.isPositive())) {
+    throw new ValidationError({ message: t({ key: 'creditCards.installmentSplitTooSmall' }) });
+  }
+
   const plan = await CardInstallmentPlans.create({
     accountId: account.id,
     userId,

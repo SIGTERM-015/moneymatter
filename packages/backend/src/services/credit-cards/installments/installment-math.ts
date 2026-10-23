@@ -5,6 +5,24 @@ import { addMonths, format, getDaysInMonth, parse } from 'date-fns';
 /** `YYYY-MM` of a UTC instant. Card statements and installment months are compared on UTC days. */
 export const toUtcMonth = ({ date }: { date: Date }): string => date.toISOString().slice(0, 7);
 
+const HOUR_MS = 3_600_000;
+// Every civil time zone lies between UTC-12 and UTC+14.
+const MIN_UTC_OFFSET_HOURS = -12;
+const MAX_UTC_OFFSET_HOURS = 14;
+
+/**
+ * Months the instant may fall in for the person who entered it. The server knows no user time
+ * zone, so a payment made late on the 31st in the Americas is already the 1st in UTC; every
+ * month it can be in locally is a candidate, earliest first.
+ */
+export const candidateLocalMonths = ({ date }: { date: Date }): string[] => [
+  ...new Set([
+    toUtcMonth({ date: new Date(date.getTime() + MIN_UTC_OFFSET_HOURS * HOUR_MS) }),
+    toUtcMonth({ date }),
+    toUtcMonth({ date: new Date(date.getTime() + MAX_UTC_OFFSET_HOURS * HOUR_MS) }),
+  ]),
+];
+
 /** `YYYY-MM` → first day of that month as the DATEONLY string the columns store. */
 export const monthToDate = ({ month }: { month: string }): string => `${month}-01`;
 

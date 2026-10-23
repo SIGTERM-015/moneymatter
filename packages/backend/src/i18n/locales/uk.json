@@ -271,7 +271,8 @@
     "installmentNotPending": "Змінити суму можна лише для платежу, що очікує оплати.",
     "installmentNotProposed": "Для цього платежу немає оплати, що очікує підтвердження.",
     "purchaseTransactionInvalid": "Покупка має бути витратою з цієї картки.",
-    "purchaseAlreadyDeferred": "Для цієї покупки вже є план розстрочки."
+    "purchaseAlreadyDeferred": "Для цієї покупки вже є план розстрочки.",
+    "installmentSplitTooSmall": "Сума замала, щоб розділити її на стільки платежів."
   },
   "errors": {
     "connectionNotFound": "Підключення не знайдено",

@@ -161,6 +161,18 @@ describe('Card installments', () => {
       expect(await helpers.getCardInstallmentPlans({ accountId: card.id, raw: true })).toEqual([]);
     });
 
+    it('responds 422 when the principal has fewer cents than installments', async () => {
+      const card = await createCard();
+
+      const res = await helpers.createCardInstallmentPlan({
+        accountId: card.id,
+        payload: { title: 'X', principal: 0.02, firstDueMonth: '2026-11', installmentsCount: 3 },
+      });
+
+      expect(res.statusCode).toBe(422);
+      expect(await helpers.getCardInstallmentPlans({ accountId: card.id, raw: true })).toEqual([]);
+    });
+
     it('rejects a purchase that is not an expense on this card, and a purchase deferred twice', async () => {
       const [card, otherCard] = await Promise.all([createCard(), createCard()]);
       const foreignPurchase = await spendOnCard({ cardId: otherCard.id, amount: 90, time: '2026-10-01T10:00:00.000Z' });
@@ -328,6 +340,19 @@ describe('Card installments', () => {
       const [plan] = await helpers.getCardInstallmentPlans({ accountId: card.id, raw: true });
       expect(plan!.status).toBe(CARD_INSTALLMENT_PLAN_STATUSES.completed);
       expect(plan!.paidCount).toBe(3);
+    });
+
+    it('matches a payment made late on the last day of the month west of UTC', async () => {
+      const { card, bank } = await setUpDeferredPurchase({ otherOctoberSpend: 200 });
+
+      // 30 November, 23:00 at UTC-6: already 1 December in UTC, when 300 would be due.
+      await payCard({ bankId: bank.id, cardId: card.id, amount: 150, time: '2026-12-01T05:00:00.000Z' });
+
+      expect(await statuses({ cardId: card.id })).toEqual([
+        CARD_INSTALLMENT_STATUSES.paid,
+        CARD_INSTALLMENT_STATUSES.pending,
+        CARD_INSTALLMENT_STATUSES.pending,
+      ]);
     });
 
     it('leaves everything pending for a transfer that matches nothing', async () => {
