@@ -17,7 +17,7 @@ import {
 } from '@bt/shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { helpers, integer } from '@vuelidate/validators';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
@@ -44,6 +44,8 @@ const {
 } = useQuery({
   queryKey,
   queryFn: () => getCreditCardDetails({ accountId: props.account.id }),
+  // Keeps the panel steady while the position refetches, but never shows another card's data.
+  placeholderData: (previous) => (previous?.accountId === props.account.id ? previous : undefined),
 });
 
 interface FormState {
@@ -55,14 +57,49 @@ interface FormState {
 
 const form = reactive<FormState>({ statementDay: null, paymentDay: null, apr: null, interestFreeMonths: 0 });
 
+// Server values the form was last filled from: the reference for unsaved edits.
+const formSource = ref<CreditCardDetailsApiResponse | null>(null);
+
 const fillForm = (value: CreditCardDetailsApiResponse | undefined) => {
+  formSource.value = value ?? null;
   form.statementDay = value?.statementDay ?? null;
   form.paymentDay = value?.paymentDay ?? null;
   form.apr = value?.apr ?? null;
   form.interestFreeMonths = value?.interestFreeMonths ?? 0;
 };
 
-watch(details, fillForm, { immediate: true });
+const toNullableNumber = (value: number | string | null) => (value === null || value === '' ? null : Number(value));
+
+const buildPayload = (): UpsertCreditCardDetailsBody => ({
+  statementDay: toNullableNumber(form.statementDay),
+  paymentDay: toNullableNumber(form.paymentDay),
+  apr: toNullableNumber(form.apr),
+  interestFreeMonths: toNullableNumber(form.interestFreeMonths) ?? 0,
+});
+
+const differsFrom = (value: CreditCardDetailsApiResponse) => {
+  const payload = buildPayload();
+  return (
+    payload.statementDay !== value.statementDay ||
+    payload.paymentDay !== value.paymentDay ||
+    payload.apr !== value.apr ||
+    payload.interestFreeMonths !== value.interestFreeMonths
+  );
+};
+
+// The query refetches on focus and whenever the balance or limit moves; a refetch must not
+// wipe edits the user has not saved yet, so the form only follows the server while it is clean.
+// Another card's data always replaces the form: this component is reused across cards.
+watch(
+  details,
+  (next) => {
+    if (!next) return;
+    const source = formSource.value;
+    if (source && source.accountId === next.accountId && differsFrom(source)) return;
+    fillForm(next);
+  },
+  { immediate: true },
+);
 
 // The API stores APR as DECIMAL(7,4) and rejects anything finer.
 const APR_MAX_DECIMALS = 4;
@@ -106,31 +143,14 @@ const { isFormValid, getFieldErrorMessage, touchField, resetValidation } = useFo
   },
 );
 
-const toNullableNumber = (value: number | string | null) => (value === null || value === '' ? null : Number(value));
-
-const buildPayload = (): UpsertCreditCardDetailsBody => ({
-  statementDay: toNullableNumber(form.statementDay),
-  paymentDay: toNullableNumber(form.paymentDay),
-  apr: toNullableNumber(form.apr),
-  interestFreeMonths: toNullableNumber(form.interestFreeMonths) ?? 0,
-});
-
-const isDirty = computed(() => {
-  if (!details.value) return false;
-  const payload = buildPayload();
-  return (
-    payload.statementDay !== details.value.statementDay ||
-    payload.paymentDay !== details.value.paymentDay ||
-    payload.apr !== details.value.apr ||
-    payload.interestFreeMonths !== details.value.interestFreeMonths
-  );
-});
+const isDirty = computed(() => !!details.value && differsFrom(details.value));
 
 const saveMutation = useMutation({
   mutationFn: (payload: UpsertCreditCardDetailsBody) =>
     upsertCreditCardDetails({ accountId: props.account.id, payload }),
   onSuccess: (saved) => {
     // The response is the full read model, so it replaces the cached query without a refetch.
+    fillForm(saved);
     queryClient.setQueryData(queryKey.value, saved);
     resetValidation();
     addSuccessNotification(t('pages.account.creditCard.saveSuccess'));
