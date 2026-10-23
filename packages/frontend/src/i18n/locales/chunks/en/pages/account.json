@@ -204,6 +204,79 @@
           "interestFreeMonthsRange": "Enter a whole number of months from 0 to 999."
         }
       },
+      "cardInstallments": {
+        "title": "Installments",
+        "add": "Add installment plan",
+        "loadError": "Couldn't load installment plans.",
+        "progress": "{paid} of {total} paid",
+        "remaining": "{amount} left",
+        "estimatedInterest": "Estimated interest: {amount}",
+        "delete": "Delete plan",
+        "deleteTitle": "Delete \"{title}\"?",
+        "deleteDescription": "The schedule is removed. The purchase and any card payments stay as they are.",
+        "deleteSuccess": "Installment plan deleted",
+        "deleteError": "Couldn't delete the installment plan",
+        "editAmount": "Edit amount",
+        "saveAmount": "Save amount",
+        "amountUpdateSuccess": "Installment amount updated",
+        "amountUpdateError": "Couldn't update the installment amount",
+        "toggleSchedule": "Show or hide the schedule",
+        "status": {
+          "pending": "Pending",
+          "proposed": "To confirm",
+          "paid": "Paid"
+        },
+        "empty": {
+          "title": "No installment plans yet",
+          "description": "Add a plan when you defer a card purchase, to see what the bank charges each month."
+        },
+        "summary": {
+          "title": "Monthly charge",
+          "previousMonth": "Previous month",
+          "nextMonth": "Next month",
+          "installmentsDue": "Installments due",
+          "statementSpend": "Statement spending",
+          "expectedTotal": "Expected total",
+          "statementPeriod": "Statement {from} – {to}"
+        },
+        "proposal": {
+          "message": "A card payment of {amount} matches the installments of {plans}, but also the statement spending. Is it the installment payment?",
+          "confirm": "Yes, it pays the installments",
+          "reject": "No, it pays the statement",
+          "confirmSuccess": "Installments marked as paid",
+          "rejectSuccess": "Payment kept as a statement payment",
+          "error": "Couldn't update the installments"
+        },
+        "form": {
+          "title": "New installment plan",
+          "description": "Split a card purchase into the monthly charges your bank bills.",
+          "purchase": "Purchase",
+          "purchasePlaceholder": "Link a card purchase (optional)",
+          "planTitle": "Title",
+          "planTitlePlaceholder": "e.g. Laptop",
+          "principal": "Amount deferred",
+          "principalPlaceholder": "Enter the purchase amount",
+          "count": "Number of installments",
+          "countPlaceholder": "e.g. 3",
+          "firstDueMonth": "First charge month",
+          "firstDueMonthPlaceholder": "Select a month",
+          "apr": "APR",
+          "interestFreeMonths": "Interest-free months",
+          "schedule": "Charges per month",
+          "scheduleHint": "Type the exact amount your bank charges each month if it differs.",
+          "resetSchedule": "Reset to equal split",
+          "amountPlaceholder": "Amount",
+          "submit": "Create plan",
+          "createSuccess": "Installment plan created",
+          "createError": "Couldn't create the installment plan",
+          "errors": {
+            "amounts": "Every installment needs a positive amount with at most 2 decimals.",
+            "countRange": "Between 1 and {max} installments",
+            "month": "Pick a month",
+            "positive": "Must be greater than zero"
+          }
+        }
+      },
       "group": {
         "label": "Account group",
         "tooltip": "Group multiple accounts together to keep your dashboard sidebar organized",

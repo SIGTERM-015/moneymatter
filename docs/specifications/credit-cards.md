@@ -52,10 +52,30 @@ files wherever possible so rebasing on upstream `dev` stays cheap.
 - Endpoints (new files): CRUD for plans under `/accounts/:id/credit-card/installments` (create generates the
   rows from an amounts array or from `principal`/`count`/`apr` with an equal split), list, and a monthly
   summary `GET /accounts/:id/credit-card/summary?month=YYYY-MM` returning `{ installmentsDue, statementSpend,
-  expectedTotal }`. e2e tests through HTTP only.
+expectedTotal }`. e2e tests through HTTP only.
 - Frontend: an "Installments" section on the card page: list of plans with progress, a create form
   (title, principal, count, per-installment amounts editable, optional link to the purchase transaction,
   optional APR / interest-free months) and the monthly summary, plus the confirm button for `proposed`.
+
+### F2 implementation notes
+
+- Endpoints: `GET|POST /accounts/:id/credit-card/installments`, `PATCH|DELETE /accounts/:id/credit-card/installments/:planId`
+  (metadata only: title, APR, interest-free months, purchase link), `PATCH /credit-card/installments/:id` (amount of a
+  `pending` installment, 409 otherwise), `POST /credit-card/installments/:id/confirm|reject`,
+  `GET /accounts/:id/credit-card/summary?month=YYYY-MM`.
+- Create takes `amounts` (bank figures) or `installmentsCount`; the split is shared with the frontend
+  (`shared/src/credit-cards/installment-split.ts`): equal split (leftover cents first) when the plan fits the interest-free
+  months or has no APR, otherwise a fixed annuity at `apr / 12`.
+- The payment is the card-side leg (income) of a two-leg transfer. Matching runs synchronously in create/update/delete
+  transaction, link and unlink transfer; bank-synced transfers are matched when they are linked. An edit only re-matches
+  when amount, date, account, type, nature or planned flag changed, so a note edit keeps a confirmed or rejected match.
+- Ambiguity compares the amount with the non-deferred spend of the latest statement already closed on the transfer day.
+- Confirm/reject resolves every installment proposed by the same transfer at once (only the whole set adds up to it).
+  A rejection is stored in `CardInstallments.rejectedTransactionId` so the same transfer is never proposed again;
+  editing the transfer clears it.
+- Summary `installmentsDue` sums the installments scheduled in the month whatever their status, so the expected total
+  does not drop once they are paid. `statementSpend` is clamped at 0.
+- A purchase can be deferred by one plan only (partial unique index); it must be a real expense on the same card.
 
 ## F3. Bank sync (Enable Banking)
 

@@ -2,6 +2,7 @@ import type { RecordId } from '@bt/shared/types';
 import Accounts from '@models/accounts.model';
 import BudgetLines from '@models/budget-lines.model';
 import BudgetPlans from '@models/budget-plans.model';
+import CardInstallmentPlans from '@models/card-installment-plans.model';
 import Categories from '@models/categories.model';
 import Goals from '@models/goals.model';
 import ImportBatches from '@models/import-batches.model';
@@ -71,6 +72,7 @@ export function createScopeResolver({ userId }: { userId: number }) {
       return idsWhere({ model: TrackerLines, where: { trackerId: { [Op.in]: trackerIds } } });
     },
     goals: () => idsWhere({ model: Goals, where: { userId } }),
+    cardInstallmentPlans: () => idsWhere({ model: CardInstallmentPlans, where: { userId } }),
   };
 
   function getScope({ scope }: { scope: BackupParentScope }): Promise<RecordId[]> {

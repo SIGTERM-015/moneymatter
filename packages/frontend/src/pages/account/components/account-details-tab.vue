@@ -17,6 +17,7 @@ const CreditLimitEditPopover = defineAsyncComponent(() => import('./credit-limit
 const InitialBalanceEditPopover = defineAsyncComponent(() => import('./initial-balance-edit-popover.vue'));
 const AccountCategoryEditPopover = defineAsyncComponent(() => import('./account-category-edit-popover.vue'));
 const CreditCardSection = defineAsyncComponent(() => import('./credit-card-section.vue'));
+const CardInstallmentsSection = defineAsyncComponent(() => import('./card-installments/card-installments-section.vue'));
 
 const { t } = useI18n();
 
@@ -132,6 +133,8 @@ const showCreditCardSection = computed(
       <template v-if="showCreditCardSection">
         <Separator />
         <CreditCardSection :account="account" :currency-code="currencyCode" />
+        <Separator />
+        <CardInstallmentsSection :account-id="account.id" :currency-code="currencyCode" />
       </template>
     </div>
   </Tabs.TabsContent>

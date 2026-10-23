@@ -265,7 +265,14 @@
     "correctionOverpay": "Скоригований залишок боргу призвів би до переплати кредиту на {{overpayAmount}}: платежі на загальну суму {{paymentsTotal}} датовані на дату {{asOfDate}} або пізніше"
   },
   "creditCards": {
-    "creditCardNotFound": "Кредитну картку не знайдено."
+    "creditCardNotFound": "Кредитну картку не знайдено.",
+    "installmentPlanNotFound": "План розстрочки не знайдено.",
+    "installmentNotFound": "Платіж розстрочки не знайдено.",
+    "installmentNotPending": "Змінити суму можна лише для платежу, що очікує оплати.",
+    "installmentNotProposed": "Для цього платежу немає оплати, що очікує підтвердження.",
+    "purchaseTransactionInvalid": "Покупка має бути витратою з цієї картки.",
+    "purchaseAlreadyDeferred": "Для цієї покупки вже є план розстрочки.",
+    "installmentSplitTooSmall": "Сума замала, щоб розділити її на стільки платежів."
   },
   "errors": {
     "connectionNotFound": "Підключення не знайдено",

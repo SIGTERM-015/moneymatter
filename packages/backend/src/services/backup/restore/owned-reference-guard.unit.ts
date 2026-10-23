@@ -31,6 +31,8 @@ const EXPECTED_GUARDED_COLUMNS: Record<string, string[]> = {
   'investment-transactions': ['portfolioId'],
   'loan-details': ['accountId'],
   'credit-card-details': ['accountId'],
+  'card-installment-plans': ['accountId', 'purchaseTransactionId'],
+  'card-installments': ['paidTransactionId', 'planId', 'rejectedTransactionId'],
   'payee-aliases': ['payeeId'],
   'payee-tags': ['payeeId', 'tagId'],
   payees: ['defaultCategoryId'],

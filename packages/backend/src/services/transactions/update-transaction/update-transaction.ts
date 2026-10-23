@@ -16,6 +16,10 @@ import * as UsersCurrencies from '@models/users-currencies.model';
 import { getUserDefaultCategory } from '@models/users.model';
 import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 import { DOMAIN_EVENTS, eventBus } from '@services/common/event-bus';
+import {
+  resyncCardPaymentsAfterEdit,
+  snapshotCardPaymentLegs,
+} from '@services/credit-cards/installments/card-payment-matching';
 import { assertLoanEditAllowed } from '@services/loans/assert-loan-edit-allowed';
 import { deriveImpliedDestinationAmount } from '@services/loans/implied-destination-amount';
 import {
@@ -670,6 +674,8 @@ export const updateTransaction = withTransaction(
         });
       }
 
+      const cardPaymentLegsBefore = await snapshotCardPaymentLegs({ transaction: prevData });
+
       // Make basic updation to the base transaction. "Transfer" transactions
       // handled down in the code
       const baseTransaction = await makeBasicBaseTxUpdation(payload, prevData, ctx);
@@ -777,6 +783,8 @@ export const updateTransaction = withTransaction(
           }
         }
       }
+
+      await resyncCardPaymentsAfterEdit({ before: cardPaymentLegsBefore, after: updatedTransactions });
 
       await matchEditedTransactionToSubscriptions({
         transaction: updatedTransactions[0],
