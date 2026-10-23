@@ -12,7 +12,7 @@ export const monthToDate = ({ month }: { month: string }): string => `${month}-0
 export const dateToMonth = ({ date }: { date: string }): string => date.slice(0, 7);
 
 /** `YYYY-MM` plus `offset` months. */
-export const shiftMonth = ({ month, offset }: { month: string; offset: number }): string =>
+const shiftMonth = ({ month, offset }: { month: string; offset: number }): string =>
   format(addMonths(parse(month, 'yyyy-MM', new Date(2000, 0, 1)), offset), 'yyyy-MM');
 
 /** Installments scheduled from `firstDueMonth`, one per month. */
@@ -78,7 +78,7 @@ export const selectDueInstallments = <T extends DueCandidate>({
   return { due, total: Money.sum(due.map((installment) => installment.amount)) };
 };
 
-export type CardPaymentMatch = 'none' | 'paid' | 'proposed';
+type CardPaymentMatch = 'none' | 'paid' | 'proposed';
 
 /**
  * How a transfer into a card settles its installments. It settles them only when it equals
