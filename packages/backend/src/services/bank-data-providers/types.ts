@@ -3,7 +3,7 @@
  * This system allows users to connect multiple bank accounts from various providers
  * (Monobank, Enable Banking, etc.) in a unified, modular way.
  */
-import { BANK_PROVIDER_TYPE, Cents } from '@bt/shared/types';
+import { ACCOUNT_CATEGORIES, BANK_PROVIDER_TYPE, Cents } from '@bt/shared/types';
 
 // ============================================================================
 // Provider Types and Enums
@@ -77,6 +77,11 @@ export interface ProviderAccount {
   name: string;
   /** Account type (e.g., 'debit', 'credit', 'savings') */
   type: string;
+  /**
+   * Category the account is created with. Omitted means `general`. Dedicated-flow
+   * categories (loan, vehicle) must not be set: sync cannot create them.
+   */
+  accountCategory?: ACCOUNT_CATEGORIES;
   /** Current account balance (in cents) */
   balance: Cents;
   /** Currency code (e.g., 'UAH', 'USD') */

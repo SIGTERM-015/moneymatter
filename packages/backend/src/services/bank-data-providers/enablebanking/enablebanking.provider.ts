@@ -1,6 +1,7 @@
 import type { RecordId } from '@bt/shared/types';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
+  ACCOUNT_CATEGORIES,
   ACCOUNT_TYPES,
   BANK_PROVIDER_TYPE,
   DEACTIVATION_REASON,
@@ -47,6 +48,7 @@ import { writeBankBalanceWithHistory } from '../utils/write-bank-balance-with-hi
 import { EnableBankingApiClient, isAspspDateRangeRejection } from './api-client';
 import {
   AmountType,
+  CashAccountType,
   CreditDebitIndicator,
   EnableBankingAccount,
   EnableBankingConnectionParams,
@@ -60,6 +62,7 @@ import {
 } from './types';
 import { balancesForLog, pickAccountBalance } from './utils/balances';
 import { filterIbanCompatible, haveSameParties, pickNearestByDate } from './utils/candidate-selection';
+import { isBankCardAccount, resolveCardBalance } from './utils/card-account';
 import { calculateConsentValidUntil } from './utils/consent';
 import {
   FINGERPRINT_WINDOW_DAYS,
@@ -581,9 +584,6 @@ export class EnableBankingProvider extends BaseBankDataProvider {
             balances: balancesForLog({ balances }),
           });
 
-          // Convert balance from string to system amount (cents as integer)
-          const balanceFloat = primaryBalance?.balance_amount ? parseFloat(primaryBalance.balance_amount.amount) : 0;
-          const balanceSystemAmount = Money.fromDecimal(balanceFloat).toCents();
           const creditLimitCurrencyMatches = Boolean(
             details.currency &&
             details.credit_limit?.currency &&
@@ -607,6 +607,18 @@ export class EnableBankingProvider extends BaseBankDataProvider {
             );
           }
 
+          const isCard = details.cash_account_type === CashAccountType.CARD;
+          // Cards report their balance with bank-specific signs; the system stores what is owed as negative.
+          const cardBalance = isCard
+            ? resolveCardBalance({ balances, creditLimit: Money.fromCents(creditLimitCents) })
+            : null;
+          const balanceSystemAmount = (
+            cardBalance ??
+            Money.fromDecimal(
+              primaryBalance?.balance_amount ? Number.parseFloat(primaryBalance.balance_amount.amount) : 0,
+            )
+          ).toCents();
+
           return {
             externalId: details.identification_hash,
             name:
@@ -614,13 +626,17 @@ export class EnableBankingProvider extends BaseBankDataProvider {
               details.details ||
               details.product ||
               `Account ${details.account_id?.iban?.slice(-4) || accountId.slice(-4)}`,
-            type: 'debit' as const, // Enable Banking doesn't distinguish, default to debit
+            type: isCard ? ('credit' as const) : ('debit' as const),
+            // Loans have a dedicated flow and cannot be created by sync, so a LOAN stays a general account
+            // and is only flagged through `metadata.cashAccountType`.
+            ...(isCard && { accountCategory: ACCOUNT_CATEGORIES.creditCard }),
             balance: balanceSystemAmount,
             // Empty/missing currency → ISO "XXX" (no currency), so connect
             // requires an explicit user choice instead of failing downstream.
             currency: details.currency?.toUpperCase() || NO_CURRENCY_CODE,
             metadata: {
               creditLimit: creditLimitCents,
+              cashAccountType: details.cash_account_type,
               iban: details.account_id?.iban,
               product: details.product,
               ownerName: details.owner_name,
@@ -1163,7 +1179,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
 
           // Always update account balance from bank when syncing
           // This ensures balance stays accurate even if no new transactions were found
-          const balance = await this.fetchBalance(connectionId, apiUid);
+          const balance = await this.fetchBalance(connectionId, apiUid, this.cardCreditLimitOf({ account }));
           await writeBankBalanceWithHistory({ account, balance: Money.fromCents(balance.amount) });
 
           return { transactionIds: createdTransactionIds, extraAutoLinkCandidateIds: bookedUpgradedTransactionIds };
@@ -1374,7 +1390,15 @@ export class EnableBankingProvider extends BaseBankDataProvider {
   // Balance Operations
   // ============================================================================
 
-  async fetchBalance(connectionId: string, accountExternalId: string): Promise<ProviderBalance> {
+  /**
+   * @param cardCreditLimit - Set for accounts that take the card balance convention
+   *   (see `isBankCardAccount`); the balance is then returned as owed = negative.
+   */
+  async fetchBalance(
+    connectionId: string,
+    accountExternalId: string,
+    cardCreditLimit?: Money,
+  ): Promise<ProviderBalance> {
     const credentials = await this.getValidatedCredentials(connectionId);
 
     if (!credentials.sessionId) {
@@ -1396,8 +1420,8 @@ export class EnableBankingProvider extends BaseBankDataProvider {
       throw new NotFoundError({ message: t({ key: 'bankDataProviders.enableBanking.noBalanceInfo' }) });
     }
 
-    const balanceFloat = parseFloat(balance.balance_amount.amount);
-    const balanceSystemAmount = Money.fromDecimal(balanceFloat).toCents();
+    const cardBalance = cardCreditLimit ? resolveCardBalance({ balances, creditLimit: cardCreditLimit }) : null;
+    const balanceSystemAmount = (cardBalance ?? Money.fromDecimal(parseFloat(balance.balance_amount.amount))).toCents();
 
     return {
       amount: balanceSystemAmount,
@@ -1418,7 +1442,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
     const metadata = account.externalData as Record<string, unknown> | null;
     const apiUid = (metadata?.uid as string) || account.externalId;
 
-    const balance = await this.fetchBalance(connectionId, apiUid);
+    const balance = await this.fetchBalance(connectionId, apiUid, this.cardCreditLimitOf({ account }));
 
     await writeBankBalanceWithHistory({ account, balance: Money.fromCents(balance.amount) });
   }
@@ -1426,6 +1450,11 @@ export class EnableBankingProvider extends BaseBankDataProvider {
   // ============================================================================
   // Helper Methods
   // ============================================================================
+
+  /** The account's credit limit when the bank reports it as a card, undefined otherwise. */
+  private cardCreditLimitOf({ account }: { account: Accounts }): Money | undefined {
+    return isBankCardAccount({ externalData: account.externalData }) ? account.creditLimit : undefined;
+  }
 
   /**
    * Start OAuth authorization flow
